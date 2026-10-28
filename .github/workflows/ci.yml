@@ -1,0 +1,94 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+# DEP-09: Least-privilege workflow permissions
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Lint, Test, Audit & Build
+    runs-on: ubuntu-latest
+
+    steps:
+      # Pinned to full commit SHA per DEP-09
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5a1 # v4.1.0
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Gitleaks
+        run: |
+          GITLEAKS_VERSION="8.24.0"
+          curl -sSL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" | sudo tar -xz -C /usr/local/bin gitleaks
+          gitleaks version
+
+      - name: Check hardcoded colors (Section 7.8)
+        run: npm run check:colors
+
+      - name: Check WCAG 2.2 AA contrast ratios (UI-03)
+        run: npm run check:contrast
+
+      - name: Check content markers & compliance phrases (PRIV-13)
+        run: npm run check:content
+
+      - name: Lint codebase
+        run: npm run lint
+
+      - name: Typecheck monorepo
+        run: npm run typecheck
+
+      - name: Audit dependencies
+        run: npm run audit:deps
+
+      - name: Secret scan repository (Gitleaks)
+        run: gitleaks detect --verbose --redact
+
+      # Docker-free: Start runner's preinstalled native PostgreSQL systemd service
+      - name: Start native PostgreSQL service (Docker-Free)
+        run: |
+          sudo systemctl start postgresql.service
+          pg_isready -h localhost -p 5432
+
+      - name: Setup CI databases and roles
+        run: |
+          sudo -u postgres psql -c "CREATE ROLE csi_migrator LOGIN PASSWORD 'ci_test_migrator_pass' CREATEDB;"
+          sudo -u postgres psql -c "CREATE ROLE csi_app LOGIN PASSWORD 'ci_test_app_pass';"
+          sudo -u postgres psql -c "CREATE DATABASE csi_gcet_dev OWNER csi_migrator;"
+          sudo -u postgres psql -c "CREATE DATABASE csi_gcet_test OWNER csi_migrator;"
+          sudo -u postgres psql -d csi_gcet_dev -c "CREATE EXTENSION IF NOT EXISTS citext; CREATE EXTENSION IF NOT EXISTS btree_gist; GRANT CONNECT ON DATABASE csi_gcet_dev TO csi_app; GRANT USAGE ON SCHEMA public TO csi_app;"
+          sudo -u postgres psql -d csi_gcet_test -c "CREATE EXTENSION IF NOT EXISTS citext; CREATE EXTENSION IF NOT EXISTS btree_gist; GRANT CONNECT ON DATABASE csi_gcet_test TO csi_app; GRANT USAGE ON SCHEMA public TO csi_app;"
+
+      - name: Migration lifecycle test (INT-11 UP -> DOWN -> UP)
+        env:
+          MIGRATION_DATABASE_URL: postgresql://csi_migrator:ci_test_migrator_pass@localhost:5432/csi_gcet_test
+        run: npx tsx scripts/test-migration-lifecycle.ts
+
+      - name: Run unit & integration test suites
+        run: npm run test
+
+      - name: Build monorepo
+        env:
+          NODE_ENV: production
+          PUBLIC_APP_URL: http://localhost:3000
+          API_INTERNAL_URL: http://localhost:4000
+        run: npm run build
+
+      # SEC-32: Build-output secret scan on .next/static
+      - name: Build-output secret scan (SEC-32)
+        run: |
+          gitleaks dir apps/web/.next/static --no-banner --verbose

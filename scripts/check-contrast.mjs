@@ -131,3 +131,4 @@ if (failedCount > 0) {
   console.log('[PASS] All token pairings satisfy WCAG 2.2 AA contrast requirements.');
   process.exit(0);
 }
+

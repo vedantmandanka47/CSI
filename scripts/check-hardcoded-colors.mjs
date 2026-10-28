@@ -105,3 +105,4 @@ if (violationCount > 0) {
   console.log('[PASS] Zero hardcoded color literals found outside tokens.css.');
   process.exit(0);
 }
+
