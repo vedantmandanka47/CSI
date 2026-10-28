@@ -63,3 +63,9 @@ FOR EACH STATEMENT EXECUTE FUNCTION audit_log_prevent_mutation();
 -- INT-01: Explicit database-level permission restriction on runtime role
 REVOKE UPDATE, DELETE, TRUNCATE ON "audit_log" FROM csi_app;
 
+-- Grant DML privileges on created tables to runtime role csi_app
+GRANT USAGE ON SCHEMA public TO csi_app;
+GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO csi_app;
+GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO csi_app;
+
+
