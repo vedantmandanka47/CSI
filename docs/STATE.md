@@ -1,15 +1,15 @@
 # STATE
 
 Updated: 2026-10-28
-Current phase / module: Phase 0 — Foundation bootstrap / P0-03 packages/shared
-Last completed module: P0-02 Repo hygiene (Completed & Committed)
-In progress (files, branch): packages/shared/*
-How to run it right now: `npm run lint` passing cleanly
-Open [ASK] items: None blocking P0-03
+Current phase / module: Phase 0 — Foundation bootstrap / P0-04 apps/api skeleton
+Last completed module: P0-03 packages/shared (Completed & Verified)
+In progress (files, branch): apps/api/*
+How to run it right now: `npm run build && npm run test && npm run lint`
+Open [ASK] items: None blocking P0-04
 Known issues: None
 Open P0/P1 risks (docs/RISKS.md): None recorded yet
 Next three actions:
 
-1. Create `packages/shared` skeleton with `errors`, `permissions`, `enums`, `schemas`.
-2. Encode the Appendix A permission matrix and write snapshot unit tests in `vitest`.
-3. Build with `tsup`, execute tests, and commit P0-03.
+1. Stage, commit, and push Step P0-03 (`packages/shared` implementation and snapshot tests).
+2. Review pre-implementation requirements for Step P0-04 (`apps/api` NestJS skeleton, env, health, error filters).
+3. Request approval for Step P0-04.
