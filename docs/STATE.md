@@ -1,18 +1,15 @@
 # STATE
 
 Updated: 2026-10-28
-Current phase / module: Phase 0 — Foundation bootstrap / P0-02 Repo hygiene
-Last completed module: P0-01 Environment verification & DB setup (Completed)
-In progress (files, branch): .gitignore, .gitattributes, .editorconfig, .nvmrc, .npmrc, package.json, tsconfig.base.json, eslint.config.mjs, .prettierrc
-How to run it right now: Not applicable (P0-02 bootstrapping)
-Open [ASK] items:
+Current phase / module: Phase 0 — Foundation bootstrap / P0-03 packages/shared
+Last completed module: P0-02 Repo hygiene (Completed & Committed)
+In progress (files, branch): packages/shared/*
+How to run it right now: `npm run lint` passing cleanly
+Open [ASK] items: None blocking P0-03
+Known issues: None
+Open P0/P1 risks (docs/RISKS.md): None recorded yet
+Next three actions:
 
-- P0 confirm Phase 0 reinterpretation as foundation bootstrap & check if old MySQL data needs migration (G-01).
-- Companion spec `prompt.md` availability / confirmation.
-  Known issues: None
-  Open P0/P1 risks (docs/RISKS.md): None recorded yet
-  Next three actions:
-
-1. Initialize git and setup root hygiene files (.gitignore, .gitattributes, .editorconfig, .nvmrc, .npmrc, tsconfig.base.json).
-2. Create root package.json with npm workspaces (`apps/api`, `apps/web`, `packages/shared`), ESLint, and Prettier.
-3. Run `npm run lint` and verify clean exit.
+1. Create `packages/shared` skeleton with `errors`, `permissions`, `enums`, `schemas`.
+2. Encode the Appendix A permission matrix and write snapshot unit tests in `vitest`.
+3. Build with `tsup`, execute tests, and commit P0-03.
