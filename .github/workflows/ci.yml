@@ -92,3 +92,4 @@ jobs:
       - name: Build-output secret scan (SEC-32)
         run: |
           gitleaks dir apps/web/.next/static --no-banner --verbose
+

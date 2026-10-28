@@ -5,3 +5,4 @@ This registry records permissions and provenance for all authorized logos, image
 | Asset | Location | Origin / Rights | Purpose / Usage |
 |---|---|---|---|
 | CSI Official Logo | `apps/web/public/brand/csi-logo.png` | Computer Society of India (CSI GCET Student Branch) | Primary branch identity, navbar emblem, official certificates, and digital ID cards |
+
