@@ -10,6 +10,7 @@ export default tseslint.config(js.configs.recommended, ...tseslint.configs.recom
     '**/coverage/**',
     '**/storage/**',
     '**/build/**',
+    '**/next-env.d.ts',
     'scripts/db-setup.sql',
   ],
 });

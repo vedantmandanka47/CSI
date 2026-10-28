@@ -62,3 +62,4 @@ FOR EACH STATEMENT EXECUTE FUNCTION audit_log_prevent_mutation();
 
 -- INT-01: Explicit database-level permission restriction on runtime role
 REVOKE UPDATE, DELETE, TRUNCATE ON "audit_log" FROM csi_app;
+
