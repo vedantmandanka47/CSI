@@ -6,6 +6,7 @@ import { DenyByDefaultGuard } from './common/guards/deny-by-default.guard.js';
 import { GlobalExceptionFilter } from './common/filters/global-exception.filter.js';
 import { RequestIdMiddleware } from './common/middleware/request-id.middleware.js';
 import { HealthModule } from './modules/health/health.module.js';
+import { PrismaModule } from './infra/prisma/prisma.module.js';
 
 @Module({
   imports: [
@@ -43,6 +44,7 @@ import { HealthModule } from './modules/health/health.module.js';
       },
     }),
     HealthModule,
+    PrismaModule,
   ],
   providers: [
     {

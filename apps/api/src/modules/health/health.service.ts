@@ -1,20 +1,9 @@
 import { Injectable, ServiceUnavailableException } from '@nestjs/common';
-import { Pool } from 'pg';
-import { env } from '../../config/env.js';
+import { PrismaService } from '../../infra/prisma/prisma.service.js';
 
 @Injectable()
 export class HealthService {
-  private pool: Pool | null = null;
-
-  private getPool(): Pool {
-    if (!this.pool) {
-      this.pool = new Pool({
-        connectionString: env.DATABASE_URL,
-        connectionTimeoutMillis: 3000,
-      });
-    }
-    return this.pool;
-  }
+  constructor(private readonly prisma: PrismaService) {}
 
   getLiveness() {
     return {
@@ -25,13 +14,7 @@ export class HealthService {
 
   async getReadiness() {
     try {
-      const client = await this.getPool().connect();
-      try {
-        await client.query('SELECT 1');
-      } finally {
-        client.release();
-      }
-
+      await this.prisma.$queryRaw`SELECT 1`;
       return {
         status: 'ready',
         database: 'connected',
@@ -42,12 +25,6 @@ export class HealthService {
         code: 'DATABASE_UNAVAILABLE',
         message: 'Database readiness check failed',
       });
-    }
-  }
-
-  async onModuleDestroy() {
-    if (this.pool) {
-      await this.pool.end();
     }
   }
 }

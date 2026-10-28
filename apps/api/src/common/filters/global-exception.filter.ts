@@ -38,10 +38,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       } else if (typeof res === 'object' && res !== null) {
         const obj = res as Record<string, unknown>;
         code = typeof obj.code === 'string' ? obj.code : this.httpStatusToErrorCode(status);
-        message =
-          typeof obj.message === 'string'
-            ? obj.message
-            : exception.message || message;
+        message = typeof obj.message === 'string' ? obj.message : exception.message || message;
         fields =
           typeof obj.fields === 'object' && obj.fields !== null
             ? (obj.fields as Record<string, string | string[]>)
