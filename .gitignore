@@ -1,0 +1,57 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Environment files (preserve .env.example)
+.env
+.env*.local
+.env.development
+.env.test
+.env.production
+!.env.example
+!.env.*.example
+
+# Local storage and file uploads
+storage/
+uploads/
+
+# Build outputs
+dist/
+build/
+.next/
+out/
+
+# Coverage and testing
+coverage/
+.nyc_output/
+test-results/
+playwright-report/
+blob-report/
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# OS and Editor files
+.DS_Store
+Thumbs.db
+.vscode/
+!.vscode/extensions.json
+.idea/
+*.swp
+*.swo
+
+# Temporary directories and cache
+.turbo/
+.cache/
+tmp/
+scratch/
+
+# Prompts and LLM specifications (per owner instruction: prompts should not be committed)
+*prompt*.md
+BUILD_PROMPT.md
+prompt.md
+BUILD_PROMPT.md
