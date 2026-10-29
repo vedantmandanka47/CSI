@@ -19,3 +19,4 @@ export const CommitteeSchema = z.object({
 });
 
 export type Committee = z.infer<typeof CommitteeSchema>;
+

@@ -4,6 +4,7 @@ import { DenyByDefaultGuard } from './deny-by-default.guard.js';
 import { PermissionCode, RoleCode } from '@csi/shared';
 import { IS_PUBLIC_KEY } from '../decorators/public.decorator.js';
 import { PERMISSION_KEY } from '../decorators/require-permission.decorator.js';
+import { IS_AUTHENTICATED_KEY } from '../decorators/authenticated.decorator.js';
 
 describe('DenyByDefaultGuard (ARCH-05)', () => {
   let guard: DenyByDefaultGuard;
@@ -31,6 +32,26 @@ describe('DenyByDefaultGuard (ARCH-05)', () => {
     });
 
     expect(guard.canActivate(mockContext)).toBe(true);
+  });
+
+  it('allows access when route is marked with @Authenticated() and user is logged in', () => {
+    jest.spyOn(reflector, 'getAllAndOverride').mockImplementation((key) => {
+      if (key === IS_AUTHENTICATED_KEY) return true;
+      return undefined;
+    });
+
+    mockRequest.user = { id: 'user-1', roles: [RoleCode.MEMBER] };
+    expect(guard.canActivate(mockContext)).toBe(true);
+  });
+
+  it('throws UnauthorizedException when route is @Authenticated() but no user is attached', () => {
+    jest.spyOn(reflector, 'getAllAndOverride').mockImplementation((key) => {
+      if (key === IS_AUTHENTICATED_KEY) return true;
+      return undefined;
+    });
+
+    mockRequest.user = undefined;
+    expect(() => guard.canActivate(mockContext)).toThrow(UnauthorizedException);
   });
 
   it('throws ForbiddenException when route has neither @Public nor permission decorator (ARCH-05 deny-by-default)', () => {

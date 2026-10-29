@@ -59,3 +59,4 @@ export const UpdateUserStatusSchema = z.object({
 });
 
 export type UpdateUserStatus = z.infer<typeof UpdateUserStatusSchema>;
+

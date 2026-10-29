@@ -10,3 +10,4 @@ import { PrismaModule } from '../../infra/prisma/prisma.module.js';
   exports: [UsersService],
 })
 export class UsersModule {}
+

@@ -20,3 +20,4 @@ export class CommitteesController {
     return { data: committee };
   }
 }
+

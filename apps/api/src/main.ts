@@ -1,6 +1,7 @@
 import { NestFactory } from '@nestjs/core';
 import { Logger } from 'nestjs-pino';
 import helmet from 'helmet';
+import cookieParser from 'cookie-parser';
 import { AppModule } from './app.module.js';
 import { env } from './config/env.js';
 
@@ -15,6 +16,9 @@ async function bootstrap() {
 
   // Security headers (SEC-02)
   app.use(helmet());
+
+  // Parse cookies for session and CSRF handling (SEC-04)
+  app.use(cookieParser());
 
   // ARCH-19: Exact trusted proxy hops
   const expressApp = app.getHttpAdapter().getInstance();

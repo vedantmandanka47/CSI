@@ -9,6 +9,7 @@ import { Reflector } from '@nestjs/core';
 import { PermissionCode, hasPermission, RoleCode } from '@csi/shared';
 import { IS_PUBLIC_KEY } from '../decorators/public.decorator.js';
 import { PERMISSION_KEY } from '../decorators/require-permission.decorator.js';
+import { IS_AUTHENTICATED_KEY } from '../decorators/authenticated.decorator.js';
 
 @Injectable()
 export class DenyByDefaultGuard implements CanActivate {
@@ -24,13 +25,18 @@ export class DenyByDefaultGuard implements CanActivate {
       return true;
     }
 
+    const isAuthenticatedOnly = this.reflector.getAllAndOverride<boolean>(IS_AUTHENTICATED_KEY, [
+      context.getHandler(),
+      context.getClass(),
+    ]);
+
     const requiredPermission = this.reflector.getAllAndOverride<PermissionCode>(PERMISSION_KEY, [
       context.getHandler(),
       context.getClass(),
     ]);
 
-    // ARCH-05: Deny by default. If neither @Public nor @RequirePermission is present, reject immediately.
-    if (!requiredPermission) {
+    // ARCH-05: Deny by default. If neither @Public, @Authenticated, nor @RequirePermission is present, reject immediately.
+    if (!isAuthenticatedOnly && !requiredPermission) {
       throw new ForbiddenException({
         code: 'FORBIDDEN',
         message:
@@ -38,7 +44,7 @@ export class DenyByDefaultGuard implements CanActivate {
       });
     }
 
-    // In authenticated contexts, request.user will carry roles (computed per request per ARCH-06)
+    // In authenticated contexts, request.user will carry identity and roles
     const request = context.switchToHttp().getRequest();
     const user = request.user;
 
@@ -49,8 +55,13 @@ export class DenyByDefaultGuard implements CanActivate {
       });
     }
 
+    // If only authentication is required without specific permission checks
+    if (isAuthenticatedOnly && !requiredPermission) {
+      return true;
+    }
+
     const roles: RoleCode[] = user.roles;
-    if (!hasPermission(roles, requiredPermission)) {
+    if (requiredPermission && !hasPermission(roles, requiredPermission)) {
       throw new ForbiddenException({
         code: 'FORBIDDEN',
         message: `Missing required permission: ${requiredPermission}`,
@@ -60,3 +71,4 @@ export class DenyByDefaultGuard implements CanActivate {
     return true;
   }
 }
+

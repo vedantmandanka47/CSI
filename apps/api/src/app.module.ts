@@ -3,12 +3,15 @@ import { APP_GUARD, APP_FILTER } from '@nestjs/core';
 import { LoggerModule } from 'nestjs-pino';
 import { env } from './config/env.js';
 import { DenyByDefaultGuard } from './common/guards/deny-by-default.guard.js';
+import { CsrfGuard } from './common/guards/csrf.guard.js';
 import { GlobalExceptionFilter } from './common/filters/global-exception.filter.js';
 import { RequestIdMiddleware } from './common/middleware/request-id.middleware.js';
+import { AuthMiddleware } from './common/middleware/auth.middleware.js';
 import { HealthModule } from './modules/health/health.module.js';
 import { RolesModule } from './modules/roles/roles.module.js';
 import { CommitteesModule } from './modules/committees/committees.module.js';
 import { UsersModule } from './modules/users/users.module.js';
+import { AuthModule } from './modules/auth/auth.module.js';
 import { PrismaModule } from './infra/prisma/prisma.module.js';
 
 @Module({
@@ -50,9 +53,14 @@ import { PrismaModule } from './infra/prisma/prisma.module.js';
     RolesModule,
     CommitteesModule,
     UsersModule,
+    AuthModule,
     PrismaModule,
   ],
   providers: [
+    {
+      provide: APP_GUARD,
+      useClass: CsrfGuard,
+    },
     {
       provide: APP_GUARD,
       useClass: DenyByDefaultGuard,
@@ -65,6 +73,6 @@ import { PrismaModule } from './infra/prisma/prisma.module.js';
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {
-    consumer.apply(RequestIdMiddleware).forRoutes('*');
+    consumer.apply(RequestIdMiddleware, AuthMiddleware).forRoutes('*');
   }
 }

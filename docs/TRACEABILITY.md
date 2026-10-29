@@ -32,4 +32,19 @@ This matrix maps every functional requirement (`FR-`), architectural rule (`ARCH
 | **DEP-03 / PRIV-13** | Argon2id memory-hard hashing algorithm for privileged credentials | `apps/api/package.json` (`argon2`), `scripts/bootstrap-admin.ts` | `scripts/bootstrap-admin.ts` verified on `csi_gcet_dev` | **VERIFIED** |
 | **Q-ADMIN-01** | Sparse unique index on nullable `enrollment_no` for non-student administrators | `apps/api/prisma/migrations/20261029000000_users_roles_roster/migration.sql` | `scripts/test-migration-lifecycle.ts` UP/DOWN test | **VERIFIED** |
 
+### Module M3: Authentication & Sessions
+
+| Requirement ID | Description | Implementing Component | Automated Test Suite / Verification | Status |
+|---|---|---|---|:---:|
+| **FR-05** | User registration / signup with strict validation and password strength enforcement | `apps/api/src/modules/auth/auth.service.ts`, `@csi/shared` | `auth.service.spec.ts`, `auth.e2e-spec.ts`, `auth-schemas.spec.ts` | **VERIFIED** |
+| **FR-06** | Email verification workflow with SHA-256 hashed single-use tokens | `apps/api/src/modules/auth/auth.service.ts` | `auth.service.spec.ts`, `auth.e2e-spec.ts` | **VERIFIED** |
+| **FR-07** | Credentials login with Argon2id memory-hard hashing and HttpOnly session cookies | `apps/api/src/modules/auth/auth.service.ts`, `tokens.ts` | `auth.service.spec.ts`, `auth.e2e-spec.ts`, `tokens.spec.ts` | **VERIFIED** |
+| **FR-08** | Stateful database sessions (`sessions` table) and revocation upon logout | `apps/api/src/modules/auth/auth.service.ts`, `auth.middleware.ts` | `auth.service.spec.ts`, `auth.e2e-spec.ts` | **VERIFIED** |
+| **FR-09** | Password reset flow invalidating all active user sessions | `apps/api/src/modules/auth/auth.service.ts` | `auth.service.spec.ts`, `auth.e2e-spec.ts` | **VERIFIED** |
+| **ARCH-14 / SEC-04** | CSRF protection enforcing `X-CSRF-Token` header and `csi_csrf` cookie on mutating HTTP verbs | `apps/api/src/common/guards/csrf.guard.ts` | `csrf.guard.spec.ts`, `auth.e2e-spec.ts` | **VERIFIED** |
+| **SEC-05 / SEC-06** | Sliding-window rate limiting on auth endpoints emitting standard 429 `RATE_LIMITED` | `apps/api/src/common/services/rate-limiter.service.ts` | `rate-limiter.service.spec.ts`, `auth.e2e-spec.ts` | **VERIFIED** |
+| **SEC-23** | Append-only audit log tracking every authentication and credential mutation | `apps/api/src/modules/auth/auth.service.ts` | `auth.service.spec.ts`, `auth.e2e-spec.ts` | **VERIFIED** |
+| **ARCH-05** | Deny-by-default access control supporting `@Public()`, `@Authenticated()`, and `@RequirePermission()` | `apps/api/src/common/guards/deny-by-default.guard.ts` | `deny-by-default.guard.spec.ts`, `auth.e2e-spec.ts` | **VERIFIED** |
+
+
 

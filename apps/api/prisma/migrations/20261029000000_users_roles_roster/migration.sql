@@ -65,3 +65,4 @@ ALTER TABLE "role_assignments" ADD CONSTRAINT "role_assignments_committee_id_fke
 
 -- Grant DML privileges on new tables to runtime application role csi_app
 GRANT SELECT, INSERT, UPDATE, DELETE ON "users", "roster_entries", "role_assignments" TO csi_app;
+
