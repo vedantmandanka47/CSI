@@ -85,3 +85,4 @@ Registered members possess the following rights regarding their records:
 - **Certificate Verification Records:** Retained for 3 academic years to allow alumni and verification portals to validate certificates.
 - **Audit Log Telemetry:** Rolling 90 days for client IP addresses; permanent immutable record for high-privilege administrative audit entries.
 - **Disposal Procedure:** `[CONTENT NEEDED: Formal academic year rollover and data disposal procedure]` `[ASK] Q5`
+

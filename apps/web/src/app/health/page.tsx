@@ -5,27 +5,47 @@ interface HealthResponse {
   timestamp: string;
 }
 
-async function getApiHealth(): Promise<{ data: HealthResponse | null; error: string | null }> {
+interface ReadyResponse {
+  status: string;
+  database: string;
+  timestamp: string;
+}
+
+async function getSystemHealth(): Promise<{
+  liveness: HealthResponse | null;
+  readiness: ReadyResponse | null;
+  error: string | null;
+}> {
   const apiInternalUrl = process.env.API_INTERNAL_URL || 'http://localhost:4000';
   try {
-    const res = await fetch(`${apiInternalUrl}/api/health`, {
-      cache: 'no-store',
-    });
-    if (!res.ok) {
-      return { data: null, error: `API returned status ${res.status}` };
+    const [liveRes, readyRes] = await Promise.all([
+      fetch(`${apiInternalUrl}/api/health`, { cache: 'no-store' }),
+      fetch(`${apiInternalUrl}/api/health/ready`, { cache: 'no-store' }),
+    ]);
+
+    const liveness = liveRes.ok ? ((await liveRes.json()) as HealthResponse) : null;
+    const readiness = readyRes.ok ? ((await readyRes.json()) as ReadyResponse) : null;
+
+    let error: string | null = null;
+    if (!liveRes.ok) {
+      error = `API Liveness probe failed with HTTP ${liveRes.status}`;
+    } else if (!readyRes.ok) {
+      error = `API Readiness probe failed with HTTP ${readyRes.status}`;
     }
-    const data = (await res.json()) as HealthResponse;
-    return { data, error: null };
+
+    return { liveness, readiness, error };
   } catch (err: unknown) {
     return {
-      data: null,
-      error: err instanceof Error ? err.message : 'Failed to reach API service',
+      liveness: null,
+      readiness: null,
+      error: err instanceof Error ? err.message : 'Failed to reach API service via internal proxy',
     };
   }
 }
 
 export default async function HealthPage() {
-  const { data, error } = await getApiHealth();
+  const { liveness, readiness, error } = await getSystemHealth();
+  const isHealthy = liveness?.status === 'ok' && readiness?.status === 'ready';
 
   return (
     <main className="flex min-h-screen flex-col items-center justify-center p-6">
@@ -34,10 +54,10 @@ export default async function HealthPage() {
           <h1 className="font-display text-2xl font-bold text-text">System Health Status</h1>
           <span
             className={`inline-flex items-center rounded-pill px-2.5 py-0.5 text-xs font-medium ${
-              data?.status === 'ok' ? 'bg-success/15 text-success' : 'bg-danger/15 text-danger'
+              isHealthy ? 'bg-success/15 text-success' : 'bg-danger/15 text-danger'
             }`}
           >
-            {data?.status === 'ok' ? 'Operational' : 'Unavailable'}
+            {isHealthy ? 'Operational' : 'Degraded'}
           </span>
         </div>
 
@@ -48,24 +68,35 @@ export default async function HealthPage() {
           </div>
 
           <div className="flex justify-between py-2 border-b border-border/50">
-            <span className="text-text-muted">NestJS API (Internal Proxy):</span>
+            <span className="text-text-muted">NestJS API (Proxy):</span>
             <span
-              className={`font-medium ${data?.status === 'ok' ? 'text-success' : 'text-danger'}`}
+              className={`font-medium ${liveness?.status === 'ok' ? 'text-success' : 'text-danger'}`}
             >
-              {data?.status === 'ok' ? 'Connected (via proxy)' : 'Connection Failed'}
+              {liveness?.status === 'ok' ? 'Connected (via proxy)' : 'Connection Failed'}
             </span>
           </div>
 
-          {data && (
+          <div className="flex justify-between py-2 border-b border-border/50">
+            <span className="text-text-muted">PostgreSQL Database:</span>
+            <span
+              className={`font-medium ${
+                readiness?.database === 'connected' ? 'text-success' : 'text-danger'
+              }`}
+            >
+              {readiness?.database === 'connected' ? 'Connected (Ready)' : 'Disconnected'}
+            </span>
+          </div>
+
+          {liveness && (
             <div className="flex justify-between py-2 border-b border-border/50">
               <span className="text-text-muted">Reported Timestamp:</span>
-              <span className="font-mono text-xs text-text">{data.timestamp}</span>
+              <span className="font-mono text-xs text-text">{liveness.timestamp}</span>
             </div>
           )}
 
           {error && (
             <div className="rounded-md bg-danger/10 p-3 text-xs text-danger">
-              Proxy Error: {error}
+              Proxy / Service Notice: {error}
             </div>
           )}
         </div>

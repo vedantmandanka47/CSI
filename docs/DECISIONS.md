@@ -77,3 +77,4 @@ Section 7.7 defines a strict motion policy for application screens (interactions
 ### Consequences
 - Rich, distinctive landing page experience without degrading device performance.
 - Full respect for user accessibility preferences and vestibular comfort.
+

@@ -4,7 +4,7 @@ import * as dotenv from 'dotenv';
 // Load .env file into process.env before validation
 dotenv.config();
 
-const EnvSchema = z.object({
+export const EnvSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   API_PORT: z.coerce.number().int().positive().default(4000),
   PUBLIC_APP_URL: z.string().url().default('http://localhost:3000'),

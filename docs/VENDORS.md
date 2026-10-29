@@ -31,3 +31,4 @@ The following services are **strictly forbidden** from receiving student or bran
 2. **Third-Party Behavioral Trackers & Ad Networks:** No Google Analytics, Meta Pixel, or marketing tracking scripts.
 3. **Third-Party CAPTCHAs that Profile Users:** No commercial CAPTCHAs that harvest browser fingerprinting data.
 4. **Google Forms Bridge:** The automated Google Forms bridge (`GOOGLE_SERVICE_ACCOUNT_JSON_B64`) remains disabled by default until the Forms integration is officially reviewed and approved (`[ASK] Q22`).
+

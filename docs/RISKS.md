@@ -42,3 +42,4 @@ This document tracks all recognized security, operational, architectural, and da
 | **RR:UX-02** | **P1** | Visual and layout inconsistency from fragmented ad-hoc colors | Zero color literals outside `tokens.css`; Tailwind mapped exclusively to CSS custom properties | `scripts/check-hardcoded-colors.mjs`; ADR-002 |
 | **RR:UX-03** | **P1** | Vestibular discomfort or distraction from heavy animations | Respect for `prefers-reduced-motion`; app screen transitions $< 200\text{ms}$; only 2 signature motions on landing page | ADR-003; Section 7.7 |
 | **RR:UX-04** | **P1** | Dead links, placeholder copy, or unreplaced templates in production | `scripts/check-content.mjs` scans for `[CONTENT NEEDED]`, lorem ipsum, and `href="#"` placeholders | `npm run check:content`; Section 8.7 |
+

@@ -7,6 +7,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { Response, Request } from 'express';
+import { ZodError } from 'zod';
 import { createErrorEnvelope, ErrorCode } from '@csi/shared';
 
 @Catch()
@@ -28,7 +29,16 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     let message = 'An unexpected server error occurred.';
     let fields: Record<string, string | string[]> = {};
 
-    if (exception instanceof HttpException) {
+    if (exception instanceof ZodError) {
+      status = HttpStatus.BAD_REQUEST;
+      code = ErrorCode.VALIDATION_ERROR;
+      message = 'Validation failed';
+      fields = {};
+      for (const issue of exception.issues) {
+        const path = issue.path.length > 0 ? issue.path.join('.') : '_all';
+        fields[path] = issue.message;
+      }
+    } else if (exception instanceof HttpException) {
       status = exception.getStatus();
       const res = exception.getResponse();
 

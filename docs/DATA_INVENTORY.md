@@ -37,3 +37,4 @@ In adherence to Hard Rule 20 and PRIV-05, the following data categories are **st
 - **Redaction in Application Logs (SEC-24):** All passwords, session tokens, CSRF tokens, authorization headers, phone numbers, and email addresses are automatically masked or redacted before reaching pino logger outputs.
 - **Audit Minimization (PRIV-12):** `audit_log.before_json` and `after_json` never store raw passwords, password hashes, or token secrets.
 - **Certificate Verification (PRIV-10):** Public verification pages (`/verify/:id`) display only the certificate recipient's name, event title, and issue date. Private contact details (email, phone, enrollment number) are never exposed on public URLs.
+

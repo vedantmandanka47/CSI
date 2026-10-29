@@ -122,3 +122,4 @@ npm run dev
 ```
 
 Navigate to `http://localhost:3000/health` in your browser to verify that the Next.js reverse proxy connects end-to-end with the NestJS API.
+

@@ -67,3 +67,4 @@ npm run build             # Production build of shared, api, and web packages
 
 Copyright © 2026 CSI GCET Student Branch. All rights reserved.
 Official logos and brand emblems are proprietary assets of the Computer Society of India.
+
