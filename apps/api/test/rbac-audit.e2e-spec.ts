@@ -222,3 +222,4 @@ describe('RBAC & Audit Trail Subsystem (E2E) (ARCH-05, ARCH-06, SEC-23)', () => 
     });
   });
 });
+

@@ -55,6 +55,17 @@ This matrix maps every functional requirement (`FR-`), architectural rule (`ARCH
 | **SEC-23** | Database-level trigger (`prevent_audit_log_mutation`) blocking all UPDATE, DELETE, and TRUNCATE attempts | `apps/api/prisma/migrations/20261028000000_init_foundation/migration.sql` | `scripts/test-migration-lifecycle.ts`, `rbac-audit.e2e-spec.ts` | **VERIFIED** |
 | **FR-10** | Protected audit log querying (`GET /api/audit-logs`) requiring `audit.view` permission with indexed filtering | `apps/api/src/modules/audit-logs/audit-logs.controller.ts`, `audit-logs.service.ts` | `audit-logs.service.spec.ts`, `audit-log-schemas.spec.ts`, `rbac-audit.e2e-spec.ts` | **VERIFIED** |
 
+### Module M5: Web Base (Shell, Theme, Navigation & Auth UI)
+
+| Requirement ID | Description | Implementing Component | Automated Test Suite / Verification | Status |
+|---|---|---|---|:---:|
+| **UI-01 / ADR-002** | "Indigo Lattice" design tokens strictly in `tokens.css`; zero hardcoded color literals | `apps/web/src/styles/tokens.css`, `tailwind.config.ts` | `scripts/check-hardcoded-colors.mjs`, `scripts/check-contrast.mjs` | **VERIFIED** |
+| **UI-02** | Distinct operational, loading, and error states handled in UI | `apps/web/src/app/health/page.tsx`, `apps/web/src/app/login/page.tsx` | Next.js build prerender & component tests | **VERIFIED** |
+| **ADR-003** | Motion policy: micro-interactions < 200ms; `prefers-reduced-motion` honored | `apps/web/src/app/page.tsx`, `navbar.tsx` | Static inspection & Tailwind transition tokens | **VERIFIED** |
+| **ARCH-14 / SEC-04** | Client-side API client auto-injects `X-CSRF-Token` header on mutating requests | `apps/web/src/lib/api-client.ts` | `apps/web/src/lib/api-client.spec.ts` | **VERIFIED** |
+| **FR-11** | Responsive layout shell with official CSI logo, auth state context, and complete auth page flows | `apps/web/src/app/layout.tsx`, `navbar.tsx`, `footer.tsx`, `app/(auth)/*` | Next.js static build (14/14 pages) & Vitest | **VERIFIED** |
+
+
 
 
 

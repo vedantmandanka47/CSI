@@ -1,6 +1,9 @@
 import type { Metadata } from 'next';
 import { Bricolage_Grotesque, IBM_Plex_Sans, IBM_Plex_Mono } from 'next/font/google';
 import { ThemeProvider } from '@/components/theme-provider';
+import { AuthProvider } from '@/components/auth-context';
+import { Navbar } from '@/components/navbar';
+import { Footer } from '@/components/footer';
 import '@/styles/globals.css';
 
 const bricolage = Bricolage_Grotesque({
@@ -46,7 +49,13 @@ export default function RootLayout({
           enableSystem
           disableTransitionOnChange
         >
-          {children}
+          <AuthProvider>
+            <div className="flex min-h-screen flex-col">
+              <Navbar />
+              <main className="flex-1">{children}</main>
+              <Footer />
+            </div>
+          </AuthProvider>
         </ThemeProvider>
       </body>
     </html>

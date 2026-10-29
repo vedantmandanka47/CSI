@@ -79,3 +79,4 @@ describe('Audit Log Schemas (SEC-23)', () => {
     expect(response.meta.total).toBe(1);
   });
 });
+

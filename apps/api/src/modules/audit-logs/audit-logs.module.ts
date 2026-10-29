@@ -8,3 +8,4 @@ import { AuditLogsController } from './audit-logs.controller.js';
   exports: [AuditLogsService],
 })
 export class AuditLogsModule {}
+
