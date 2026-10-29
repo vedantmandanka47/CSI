@@ -124,3 +124,4 @@ describe('GlobalExceptionFilter (ARCH-15, Section 14.1)', () => {
     expect(mockResponse.setHeader).toHaveBeenCalledWith('X-Request-Id', 'custom-trace-id-1234');
   });
 });
+

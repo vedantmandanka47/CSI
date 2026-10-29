@@ -9,23 +9,71 @@ generator client {
 }
 
 model Role {
-  id          String   @id @default(uuid()) @db.Uuid
-  code        String   @unique @db.VarChar(50)
-  name        String   @db.VarChar(100)
-  description String   @db.Text
-  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  id              String           @id @default(uuid()) @db.Uuid
+  code            String           @unique @db.VarChar(50)
+  name            String           @db.VarChar(100)
+  description     String           @db.Text
+  createdAt       DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  roleAssignments RoleAssignment[]
 
   @@map("roles")
 }
 
 model Committee {
-  id          String   @id @default(uuid()) @db.Uuid
-  code        String   @unique @db.VarChar(50)
-  name        String   @db.VarChar(100)
-  description String   @db.Text
-  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  id              String           @id @default(uuid()) @db.Uuid
+  code            String           @unique @db.VarChar(50)
+  name            String           @db.VarChar(100)
+  description     String           @db.Text
+  createdAt       DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  roleAssignments RoleAssignment[]
 
   @@map("committees")
+}
+
+model User {
+  id              String           @id @default(uuid()) @db.Uuid
+  enrollmentNo    String?          @map("enrollment_no") @db.VarChar(50)
+  name            String           @db.VarChar(100)
+  email           String           @unique @db.Citext
+  phone           String?          @db.VarChar(20)
+  branch          String?          @db.VarChar(50)
+  year            Int?
+  photo           String?          @db.VarChar(255)
+  status          String           @default("pending") @db.VarChar(20)
+  passwordHash    String           @map("password_hash") @db.VarChar(255)
+  createdAt       DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime         @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  roleAssignments RoleAssignment[]
+
+  @@map("users")
+}
+
+model RoleAssignment {
+  id          String     @id @default(uuid()) @db.Uuid
+  userId      String     @map("user_id") @db.Uuid
+  roleId      String     @map("role_id") @db.Uuid
+  committeeId String?    @map("committee_id") @db.Uuid
+  termStart   DateTime   @default(now()) @map("term_start") @db.Timestamptz(6)
+  termEnd     DateTime?  @map("term_end") @db.Timestamptz(6)
+  createdAt   DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
+  user        User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role        Role       @relation(fields: [roleId], references: [id], onDelete: Restrict)
+  committee   Committee? @relation(fields: [committeeId], references: [id], onDelete: SetNull)
+
+  @@map("role_assignments")
+}
+
+model RosterEntry {
+  id           String   @id @default(uuid()) @db.Uuid
+  academicYear String   @map("academic_year") @db.VarChar(20)
+  enrollmentNo String   @map("enrollment_no") @db.VarChar(50)
+  name         String   @db.VarChar(100)
+  branch       String   @db.VarChar(50)
+  year         Int
+  importedAt   DateTime @default(now()) @map("imported_at") @db.Timestamptz(6)
+
+  @@unique([academicYear, enrollmentNo], name: "academic_enrollment_unique")
+  @@map("roster_entries")
 }
 
 model AuditLog {
@@ -41,4 +89,3 @@ model AuditLog {
 
   @@map("audit_log")
 }
-

@@ -1,5 +1,5 @@
-import { readFileSync } from 'fs';
-import { resolve } from 'path';
+import { readFileSync, readdirSync, statSync } from 'fs';
+import { resolve, join } from 'path';
 import { Client } from 'pg';
 
 // Test database connection string using migrator role
@@ -14,34 +14,67 @@ async function runMigrationTest() {
   const client = new Client({ connectionString: testDbUrl });
   await client.connect();
 
-  const migrationDir = resolve(
-    process.cwd(),
-    'apps/api/prisma/migrations/20261028000000_init_foundation',
-  );
-  const upSql = readFileSync(resolve(migrationDir, 'migration.sql'), 'utf-8');
-  const downSql = readFileSync(resolve(migrationDir, 'down.sql'), 'utf-8');
+  const migrationsRoot = resolve(process.cwd(), 'apps/api/prisma/migrations');
+  const migrationDirs = readdirSync(migrationsRoot)
+    .filter((name) => statSync(join(migrationsRoot, name)).isDirectory())
+    .sort();
+
+  console.log(`Found ${migrationDirs.length} migration(s): ${migrationDirs.join(', ')}`);
+
+  const expectedTables = [
+    'roles',
+    'committees',
+    'audit_log',
+    'users',
+    'roster_entries',
+    'role_assignments',
+  ];
 
   try {
     // ------------------------------------------------------------------------
-    // STEP 1: UP (Initial Migration)
+    // STEP 0: Pre-clean test database if previous run left tables behind
     // ------------------------------------------------------------------------
-    console.log('\n--- [1/3] Applying UP Migration ---');
-    await client.query(upSql);
-    console.log('✅ UP migration executed successfully.');
+    const preCheck = await client.query(
+      `SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_name = ANY($1);`,
+      [expectedTables],
+    );
+    if (preCheck.rows.length > 0) {
+      console.log('🧹 Pre-cleaning test database from previous run...');
+      const reverseDirs = [...migrationDirs].reverse();
+      for (const dirName of reverseDirs) {
+        const downPath = join(migrationsRoot, dirName, 'down.sql');
+        const downSql = readFileSync(downPath, 'utf-8');
+        await client.query(downSql);
+      }
+      console.log('✅ Pre-clean completed.');
+    }
+
+    // ------------------------------------------------------------------------
+    // STEP 1: UP (Apply all migrations in forward order)
+    // ------------------------------------------------------------------------
+    console.log('\n--- [1/3] Applying all UP Migrations ---');
+    for (const dirName of migrationDirs) {
+      const upSql = readFileSync(join(migrationsRoot, dirName, 'migration.sql'), 'utf-8');
+      console.log(`  Applying UP: ${dirName}`);
+      await client.query(upSql);
+    }
+    console.log('✅ All UP migrations executed successfully.');
 
     // Verify tables exist
     const checkTablesQuery = `
       SELECT table_name 
       FROM information_schema.tables 
       WHERE table_schema = 'public' 
-        AND table_name IN ('roles', 'committees', 'audit_log');
+        AND table_name = ANY($1);
     `;
-    const upTables = await client.query(checkTablesQuery);
+    const upTables = await client.query(checkTablesQuery, [expectedTables]);
     console.log(
       `📊 Tables present after UP: ${upTables.rows.map((r: { table_name: string }) => r.table_name).join(', ')}`,
     );
-    if (upTables.rows.length !== 3) {
-      throw new Error(`Expected 3 tables after UP migration, found ${upTables.rows.length}`);
+    if (upTables.rows.length !== expectedTables.length) {
+      throw new Error(
+        `Expected ${expectedTables.length} tables after UP migration, found ${upTables.rows.length}`,
+      );
     }
 
     // Verify append-only audit_log trigger (INT-01)
@@ -66,28 +99,40 @@ async function runMigrationTest() {
     }
 
     // ------------------------------------------------------------------------
-    // STEP 2: DOWN (Rollback)
+    // STEP 2: DOWN (Rollback all migrations in reverse order)
     // ------------------------------------------------------------------------
-    console.log('\n--- [2/3] Applying DOWN Rollback (down.sql) ---');
-    await client.query(downSql);
-    console.log('✅ DOWN rollback executed successfully.');
+    console.log('\n--- [2/3] Applying DOWN Rollbacks in reverse order ---');
+    const reverseDirs = [...migrationDirs].reverse();
+    for (const dirName of reverseDirs) {
+      const downPath = join(migrationsRoot, dirName, 'down.sql');
+      const downSql = readFileSync(downPath, 'utf-8');
+      console.log(`  Applying DOWN: ${dirName}`);
+      await client.query(downSql);
+    }
+    console.log('✅ DOWN rollbacks executed successfully.');
 
-    const downTables = await client.query(checkTablesQuery);
+    const downTables = await client.query(checkTablesQuery, [expectedTables]);
     console.log(`📊 Tables present after DOWN: ${downTables.rows.length}`);
     if (downTables.rows.length !== 0) {
       throw new Error(`Expected 0 tables after DOWN rollback, found ${downTables.rows.length}`);
     }
 
     // ------------------------------------------------------------------------
-    // STEP 3: UP (Re-apply migration)
+    // STEP 3: UP (Re-apply all migrations forward)
     // ------------------------------------------------------------------------
-    console.log('\n--- [3/3] Re-applying UP Migration ---');
-    await client.query(upSql);
-    console.log('✅ UP migration re-applied cleanly.');
+    console.log('\n--- [3/3] Re-applying all UP Migrations ---');
+    for (const dirName of migrationDirs) {
+      const upSql = readFileSync(join(migrationsRoot, dirName, 'migration.sql'), 'utf-8');
+      console.log(`  Re-applying UP: ${dirName}`);
+      await client.query(upSql);
+    }
+    console.log('✅ UP migrations re-applied cleanly.');
 
-    const finalTables = await client.query(checkTablesQuery);
-    if (finalTables.rows.length !== 3) {
-      throw new Error(`Expected 3 tables after re-applying UP, found ${finalTables.rows.length}`);
+    const finalTables = await client.query(checkTablesQuery, [expectedTables]);
+    if (finalTables.rows.length !== expectedTables.length) {
+      throw new Error(
+        `Expected ${expectedTables.length} tables after re-applying UP, found ${finalTables.rows.length}`,
+      );
     }
 
     console.log('\n🎉 Migration lifecycle test PASSED! UP -> DOWN -> UP verified.');

@@ -42,3 +42,4 @@ describe('RequestIdMiddleware', () => {
     expect(nextFunction).toHaveBeenCalled();
   });
 });
+
