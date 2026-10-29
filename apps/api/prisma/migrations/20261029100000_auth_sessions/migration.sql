@@ -67,3 +67,4 @@ END $$;
 
 -- Permissions grant to csi_app
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE "sessions", "verification_tokens", "password_reset_tokens" TO csi_app;
+

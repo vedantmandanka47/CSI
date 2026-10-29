@@ -229,3 +229,4 @@ export class AuthController {
     return this.authService.resetPassword(result.data.token, result.data.new_password, ip);
   }
 }
+

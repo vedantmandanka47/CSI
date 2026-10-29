@@ -46,5 +46,15 @@ This matrix maps every functional requirement (`FR-`), architectural rule (`ARCH
 | **SEC-23** | Append-only audit log tracking every authentication and credential mutation | `apps/api/src/modules/auth/auth.service.ts` | `auth.service.spec.ts`, `auth.e2e-spec.ts` | **VERIFIED** |
 | **ARCH-05** | Deny-by-default access control supporting `@Public()`, `@Authenticated()`, and `@RequirePermission()` | `apps/api/src/common/guards/deny-by-default.guard.ts` | `deny-by-default.guard.spec.ts`, `auth.e2e-spec.ts` | **VERIFIED** |
 
+### Module M4: RBAC, Guards & Audit Logging Consolidation
+
+| Requirement ID | Description | Implementing Component | Automated Test Suite / Verification | Status |
+|---|---|---|---|:---:|
+| **ARCH-05** | Strict deny-by-default on all endpoints; unannotated routes fail closed with 403 Forbidden | `apps/api/src/common/guards/deny-by-default.guard.ts` | `deny-by-default.guard.spec.ts`, `rbac-audit.e2e-spec.ts` | **VERIFIED** |
+| **ARCH-06** | Per-request RBAC evaluation directly from PostgreSQL; role mutations take immediate effect without relogin | `apps/api/src/common/middleware/auth.middleware.ts` | `rbac-audit.e2e-spec.ts` (dynamic role escalation test) | **VERIFIED** |
+| **SEC-23** | Database-level trigger (`prevent_audit_log_mutation`) blocking all UPDATE, DELETE, and TRUNCATE attempts | `apps/api/prisma/migrations/20261028000000_init_foundation/migration.sql` | `scripts/test-migration-lifecycle.ts`, `rbac-audit.e2e-spec.ts` | **VERIFIED** |
+| **FR-10** | Protected audit log querying (`GET /api/audit-logs`) requiring `audit.view` permission with indexed filtering | `apps/api/src/modules/audit-logs/audit-logs.controller.ts`, `audit-logs.service.ts` | `audit-logs.service.spec.ts`, `audit-log-schemas.spec.ts`, `rbac-audit.e2e-spec.ts` | **VERIFIED** |
+
+
 
 

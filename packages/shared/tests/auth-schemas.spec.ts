@@ -82,3 +82,4 @@ describe('Auth Schemas', () => {
     expect(user.roles).toContain('admin');
   });
 });
+
