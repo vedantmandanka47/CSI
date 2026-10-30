@@ -15,6 +15,8 @@ import { AuthModule } from './modules/auth/auth.module.js';
 import { AuditLogsModule } from './modules/audit-logs/audit-logs.module.js';
 import { PublicModule } from './modules/public/public.module.js';
 import { EventsModule } from './modules/events/events.module.js';
+import { AdminModule } from './modules/admin/admin.module.js';
+import { IdCardModule } from './modules/id-card/id-card.module.js';
 import { PrismaModule } from './infra/prisma/prisma.module.js';
 
 @Module({
@@ -60,6 +62,8 @@ import { PrismaModule } from './infra/prisma/prisma.module.js';
     AuditLogsModule,
     PublicModule,
     EventsModule,
+    AdminModule,
+    IdCardModule,
     PrismaModule,
   ],
   providers: [

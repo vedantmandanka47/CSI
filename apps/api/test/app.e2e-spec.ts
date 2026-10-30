@@ -113,4 +113,32 @@ describe('API Foundation & Health (E2E) (DEP-13, ARCH-05, ARCH-15)', () => {
     expect(response.body.error.code).toBe('VALIDATION_ERROR');
     expect(response.body.error.fields).toBeDefined();
   });
+
+  // M8: Membership Onboarding & Verification E2E Tests
+  it('GET /api/me/id-card requires authentication and returns 401 when unauthenticated', async () => {
+    const response = await request(app.getHttpServer()).get('/api/me/id-card').expect(401);
+
+    expect(response.body.error).toBeDefined();
+    expect(response.body.error.code).toBe('UNAUTHENTICATED');
+  });
+
+  it('POST /api/id-card/verify validates and rejects malformed or invalid pass tokens', async () => {
+    const response = await request(app.getHttpServer())
+      .post('/api/id-card/verify')
+      .send({ token: 'csi_pass.invalidpayload.invalidsignature' })
+      .expect(200);
+
+    expect(response.body.data.valid).toBe(false);
+    expect(response.body.data.message).toBeDefined();
+  });
+
+  it('GET /api/admin/drives & /api/admin/members/applications require authentication (RBAC)', async () => {
+    const resDrives = await request(app.getHttpServer()).get('/api/admin/drives').expect(401);
+    expect(resDrives.body.error.code).toBe('UNAUTHENTICATED');
+
+    const resApps = await request(app.getHttpServer())
+      .get('/api/admin/members/applications')
+      .expect(401);
+    expect(resApps.body.error.code).toBe('UNAUTHENTICATED');
+  });
 });

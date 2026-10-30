@@ -4,7 +4,11 @@ import { PrismaService } from '../../infra/prisma/prisma.service.js';
 
 describe('PublicService', () => {
   let service: PublicService;
-  let prisma: { user: { count: jest.Mock }; event: { count: jest.Mock } };
+  let prisma: {
+    user: { count: jest.Mock };
+    event: { count: jest.Mock };
+    driveWindow: { findUnique: jest.Mock };
+  };
 
   beforeEach(async () => {
     prisma = {
@@ -13,6 +17,15 @@ describe('PublicService', () => {
       },
       event: {
         count: jest.fn().mockResolvedValue(12),
+      },
+      driveWindow: {
+        findUnique: jest.fn().mockResolvedValue({
+          id: 'drive-1',
+          type: 'membership',
+          opensAt: new Date(Date.now() - 86400000),
+          closesAt: new Date(Date.now() + 86400000),
+          isOpen: true,
+        }),
       },
     };
 

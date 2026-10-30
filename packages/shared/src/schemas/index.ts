@@ -6,3 +6,6 @@ export * from './auth.schema.js';
 export * from './audit-log.schema.js';
 export * from './public-status.schema.js';
 export * from './event.schema.js';
+export * from './drive-window.schema.js';
+export * from './member-application.schema.js';
+export * from './id-card.schema.js';

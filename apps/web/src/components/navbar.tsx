@@ -5,11 +5,18 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { usePathname } from 'next/navigation';
 import { useAuth } from '@/components/auth-context';
+import { RoleCode } from '@csi/shared';
 
 export function Navbar() {
   const pathname = usePathname();
   const { user, isAuthenticated, isLoading, logout } = useAuth();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  const isExecutive =
+    user &&
+    (user.roles.includes(RoleCode.PRESIDENT) ||
+      user.roles.includes(RoleCode.VP) ||
+      user.roles.includes(RoleCode.ADMIN));
 
   const navLinks = [
     { href: '/', label: 'Home' },
@@ -71,6 +78,20 @@ export function Navbar() {
             <div className="h-8 w-20 animate-pulse rounded-md bg-surface-raised" />
           ) : isAuthenticated && user ? (
             <div className="flex items-center gap-3">
+              {isExecutive && (
+                <Link
+                  href="/admin/members"
+                  className="rounded-md border border-border bg-surface px-3 py-1.5 text-xs font-medium text-text transition-colors hover:bg-surface-raised"
+                >
+                  Admin
+                </Link>
+              )}
+              <Link
+                href="/id-card"
+                className="inline-flex items-center gap-1.5 rounded-md bg-primary/10 px-3 py-1.5 text-xs font-semibold text-primary transition-colors hover:bg-primary/20"
+              >
+                <span>ID Card</span>
+              </Link>
               <div className="flex flex-col text-right">
                 <span className="text-xs font-semibold text-text">{user.full_name}</span>
                 <span className="text-xs uppercase tracking-wider text-text-muted">
@@ -157,6 +178,22 @@ export function Navbar() {
                   <div className="px-3 text-xs text-text-muted">
                     Signed in as <span className="font-medium text-text">{user.full_name}</span>
                   </div>
+                  <Link
+                    href="/id-card"
+                    onClick={() => setMobileMenuOpen(false)}
+                    className="w-full rounded-md bg-primary/10 px-3 py-2 text-center text-sm font-semibold text-primary hover:bg-primary/20"
+                  >
+                    Digital ID Pass
+                  </Link>
+                  {isExecutive && (
+                    <Link
+                      href="/admin/members"
+                      onClick={() => setMobileMenuOpen(false)}
+                      className="w-full rounded-md border border-border px-3 py-2 text-center text-sm font-medium text-text hover:bg-surface-raised"
+                    >
+                      Executive Admin
+                    </Link>
+                  )}
                   <button
                     type="button"
                     onClick={() => {

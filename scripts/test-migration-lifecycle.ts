@@ -45,6 +45,7 @@ async function runMigrationTest() {
     'events',
     'registrations',
     'event_guests',
+    'drive_windows',
   ];
 
   try {

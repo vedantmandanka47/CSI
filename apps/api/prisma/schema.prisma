@@ -216,3 +216,17 @@ model EventGuest {
   @@index([eventId, status])
   @@map("event_guests")
 }
+
+
+model DriveWindow {
+  id        String   @id @default(uuid()) @db.Uuid
+  type      String   @unique @db.VarChar(50)
+  opensAt   DateTime @map("opens_at") @db.Timestamptz(6)
+  closesAt  DateTime @map("closes_at") @db.Timestamptz(6)
+  isOpen    Boolean  @default(true) @map("is_open")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@index([type, isOpen])
+  @@map("drive_windows")
+}
