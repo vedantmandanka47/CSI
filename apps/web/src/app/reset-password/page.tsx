@@ -2,6 +2,7 @@
 
 import React, { useState, Suspense } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { apiClient, ApiError } from '@/lib/api-client';
 
@@ -28,7 +29,7 @@ function ResetPasswordContent() {
     setErrorMsg(null);
 
     if (!token) {
-      setErrorMsg('Missing or invalid reset token. Please request a new link.');
+      setErrorMsg('Missing or invalid reset token. Please request a new recovery link.');
       return;
     }
 
@@ -66,41 +67,54 @@ function ResetPasswordContent() {
   };
 
   return (
-    <div className="flex min-h-[calc(100vh-8rem)] items-center justify-center px-4 py-12 sm:px-6 lg:px-8">
-      <div className="w-full max-w-md space-y-6 rounded-lg border border-border bg-surface p-8 shadow-sm">
-        <div className="text-center">
+    <div className="flex min-h-[calc(100vh-10rem)] items-center justify-center px-4 py-12 sm:px-6 lg:px-8">
+      <div className="w-full max-w-md space-y-6 rounded-xl border border-border bg-surface p-8 shadow-sm">
+        {/* Brand Header */}
+        <div className="flex flex-col items-center text-center space-y-2">
+          <div className="relative h-12 w-12 overflow-hidden rounded-md border border-border bg-surface p-1 shadow-sm mb-1">
+            <Image
+              src="/brand/csi-logo.png"
+              alt="CSI GCET Logo"
+              width={48}
+              height={48}
+              className="h-full w-full object-contain"
+              priority
+            />
+          </div>
           <h1 className="font-display text-2xl font-bold tracking-tight text-text">
             Set New Password
           </h1>
-          <p className="mt-2 text-xs text-text-muted">
-            Enter your new secure password to restore access to your account
+          <p className="text-xs text-text-muted leading-relaxed max-w-xs">
+            Create a strong replacement password to restore access to your CSI GCET account.
           </p>
         </div>
 
         {errorMsg && (
           <div
             role="alert"
-            className="rounded-md border border-danger/30 bg-danger/10 p-3 text-xs text-danger"
+            className="rounded-lg border border-danger/30 bg-danger/10 p-3 text-xs text-danger leading-relaxed"
           >
             {errorMsg}
           </div>
         )}
 
         {success ? (
-          <div className="space-y-4 text-center">
+          <div className="space-y-4 text-center py-2">
             <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-success/15 text-success">
               <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" strokeWidth="2" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
               </svg>
             </div>
-            <p className="text-sm font-semibold text-text">Password Reset Successfully!</p>
-            <p className="text-xs text-text-muted">
-              All previous sessions have been invalidated. Redirecting you to the sign-in page...
-            </p>
+            <div className="space-y-1">
+              <p className="text-sm font-semibold text-text">Password Reset Successfully</p>
+              <p className="text-xs text-text-muted leading-relaxed">
+                All prior sessions have been invalidated. Redirecting you to the member sign-in portal...
+              </p>
+            </div>
             <div className="pt-2">
               <Link
                 href="/login"
-                className="inline-block rounded-md bg-primary px-4 py-2 text-xs font-semibold text-primary-foreground hover:opacity-90"
+                className="inline-block w-full rounded-md bg-primary py-2.5 text-xs font-semibold text-primary-foreground hover:opacity-90 shadow-sm"
               >
                 Sign In Now
               </Link>
@@ -108,8 +122,8 @@ function ResetPasswordContent() {
           </div>
         ) : (
           <form onSubmit={handleSubmit} className="space-y-4">
-            <div>
-              <label htmlFor="newPassword" className="block text-xs font-semibold uppercase tracking-wider text-text">
+            <div className="space-y-1">
+              <label htmlFor="newPassword" className="block text-xs font-semibold text-text">
                 New Password
               </label>
               <input
@@ -118,12 +132,13 @@ function ResetPasswordContent() {
                 required
                 value={newPassword}
                 onChange={(e) => setNewPassword(e.target.value)}
-                className="mt-1 block w-full rounded-md border border-border bg-surface px-3 py-2 text-sm text-text placeholder-text-muted focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                placeholder="Minimum 10 characters"
+                className="block w-full rounded-md border border-border bg-surface px-3 py-2 text-xs text-text placeholder-text-muted focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
               />
             </div>
 
-            <div>
-              <label htmlFor="confirmPassword" className="block text-xs font-semibold uppercase tracking-wider text-text">
+            <div className="space-y-1">
+              <label htmlFor="confirmPassword" className="block text-xs font-semibold text-text">
                 Confirm New Password
               </label>
               <input
@@ -132,38 +147,42 @@ function ResetPasswordContent() {
                 required
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
-                className="mt-1 block w-full rounded-md border border-border bg-surface px-3 py-2 text-sm text-text placeholder-text-muted focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                placeholder="Re-enter new password"
+                className="block w-full rounded-md border border-border bg-surface px-3 py-2 text-xs text-text placeholder-text-muted focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
               />
             </div>
 
-            <div className="rounded-md border border-border bg-surface-raised p-3 text-xs">
-              <span className="font-semibold text-text">Password Requirements:</span>
-              <ul className="mt-1.5 space-y-1 text-[11px]">
-                <li className={`flex items-center gap-1.5 ${hasMinLength ? 'text-success' : 'text-text-muted'}`}>
+            {/* Password Requirements Checklist */}
+            <div className="rounded-lg border border-border bg-surface-raised p-3 text-xs">
+              <span className="font-semibold text-text block mb-1">Security Requirements:</span>
+              <ul className="grid grid-cols-1 gap-1 sm:grid-cols-2 text-xs">
+                <li className={`flex items-center gap-1.5 ${hasMinLength ? 'text-success font-medium' : 'text-text-muted'}`}>
                   <span>{hasMinLength ? '✓' : '•'}</span> 10+ characters
                 </li>
-                <li className={`flex items-center gap-1.5 ${hasUppercase ? 'text-success' : 'text-text-muted'}`}>
-                  <span>{hasUppercase ? '✓' : '•'}</span> At least 1 uppercase letter
+                <li className={`flex items-center gap-1.5 ${hasUppercase ? 'text-success font-medium' : 'text-text-muted'}`}>
+                  <span>{hasUppercase ? '✓' : '•'}</span> Uppercase letter
                 </li>
-                <li className={`flex items-center gap-1.5 ${hasLowercase ? 'text-success' : 'text-text-muted'}`}>
-                  <span>{hasLowercase ? '✓' : '•'}</span> At least 1 lowercase letter
+                <li className={`flex items-center gap-1.5 ${hasLowercase ? 'text-success font-medium' : 'text-text-muted'}`}>
+                  <span>{hasLowercase ? '✓' : '•'}</span> Lowercase letter
                 </li>
-                <li className={`flex items-center gap-1.5 ${hasNumber ? 'text-success' : 'text-text-muted'}`}>
-                  <span>{hasNumber ? '✓' : '•'}</span> At least 1 number
+                <li className={`flex items-center gap-1.5 ${hasNumber ? 'text-success font-medium' : 'text-text-muted'}`}>
+                  <span>{hasNumber ? '✓' : '•'}</span> Number (0-9)
                 </li>
-                <li className={`flex items-center gap-1.5 ${hasSpecial ? 'text-success' : 'text-text-muted'}`}>
-                  <span>{hasSpecial ? '✓' : '•'}</span> At least 1 special character
+                <li className={`flex items-center gap-1.5 ${hasSpecial ? 'text-success font-medium' : 'text-text-muted'}`}>
+                  <span>{hasSpecial ? '✓' : '•'}</span> Special symbol
                 </li>
               </ul>
             </div>
 
-            <button
-              type="submit"
-              disabled={submitting || !isPasswordValid}
-              className="w-full rounded-md bg-primary py-2.5 text-sm font-semibold text-primary-foreground shadow-sm transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {submitting ? 'Resetting Password...' : 'Save New Password'}
-            </button>
+            <div className="pt-2">
+              <button
+                type="submit"
+                disabled={submitting || !isPasswordValid}
+                className="w-full rounded-md bg-primary py-2.5 text-xs font-semibold text-primary-foreground shadow-sm transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {submitting ? 'Updating Credentials...' : 'Save New Password'}
+              </button>
+            </div>
           </form>
         )}
       </div>
@@ -175,7 +194,7 @@ export default function ResetPasswordPage() {
   return (
     <Suspense
       fallback={
-        <div className="flex min-h-[calc(100vh-8rem)] items-center justify-center">
+        <div className="flex min-h-[calc(100vh-10rem)] items-center justify-center">
           <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
         </div>
       }

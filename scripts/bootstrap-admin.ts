@@ -29,6 +29,25 @@ if (!dbUrl) {
   process.exit(1);
 }
 
+// 1. Static URL and Host verification (U1 / Finding F-01)
+let parsedUrl: URL;
+try {
+  parsedUrl = new URL(dbUrl);
+} catch (err: unknown) {
+  const message = err instanceof Error ? err.message : String(err);
+  console.error('[FATAL] Failed to parse database URL:', message);
+  process.exit(1);
+}
+
+const allowedHosts = ['localhost', '127.0.0.1', '::1'];
+if (!allowedHosts.includes(parsedUrl.hostname)) {
+  console.error('================================================================');
+  console.error(' [REFUSED] REMOTE TARGET DETECTED!');
+  console.error(` Bootstrap utility refused execution against non-local host "${parsedUrl.hostname}".`);
+  console.error('================================================================');
+  process.exit(1);
+}
+
 function generateSecureOtp(length = 20): string {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%&*';
   const bytes = randomBytes(length);
@@ -49,6 +68,28 @@ async function main() {
   await client.connect();
 
   try {
+    // 0. Live database target allowlist verification (U1 / Finding F-01)
+    const dbResult = await client.query<{ current_database: string }>('SELECT current_database();');
+    const liveDbName = dbResult.rows[0]?.current_database;
+    const ALLOWED_BOOTSTRAP_DATABASES = ['csi_gcet_dev', 'csi_gcet_test'];
+
+    if (!ALLOWED_BOOTSTRAP_DATABASES.includes(liveDbName)) {
+      console.error('================================================================');
+      console.error(' [REFUSED] DATABASE ALLOWLIST VIOLATION DETECTED!');
+      console.error(` Connected server reports current_database() = "${liveDbName}".`);
+      console.error(
+        ` Administrator bootstrap is strictly restricted to approved databases: [${ALLOWED_BOOTSTRAP_DATABASES.join(', ')}].`,
+      );
+      console.error('================================================================');
+      try {
+        await client.end();
+      } catch {
+        // ignore cleanup error
+      }
+      process.exit(1);
+    }
+    console.log(`[VERIFIED] Operating against authorized database: "${liveDbName}".\n`);
+
     // 1. Check if the 'users' table exists
     const tableCheck = await client.query<{ exists: boolean }>(`
       SELECT EXISTS (
@@ -60,6 +101,11 @@ async function main() {
     const usersTableExists = tableCheck.rows[0]?.exists;
     if (!usersTableExists) {
       console.error('[FATAL] "users" table does not exist. Please run migrations first.');
+      try {
+        await client.end();
+      } catch {
+        // ignore cleanup error
+      }
       process.exit(1);
     }
 
@@ -70,6 +116,11 @@ async function main() {
 
     if (adminRoleRes.rows.length === 0) {
       console.error('[FATAL] Admin role not found in roles table. Please run db:seed first.');
+      try {
+        await client.end();
+      } catch {
+        // ignore cleanup error
+      }
       process.exit(1);
     }
 
@@ -91,6 +142,11 @@ async function main() {
       console.error(' [REFUSED] An administrator account already exists.');
       console.error(' Multiple bootstrap runs are strictly forbidden (Section 4.5).');
       console.error('================================================================');
+      try {
+        await client.end();
+      } catch {
+        // ignore cleanup error
+      }
       process.exit(1);
     }
 

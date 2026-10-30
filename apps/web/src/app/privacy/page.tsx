@@ -2,70 +2,89 @@ import React from 'react';
 import Link from 'next/link';
 
 export const metadata = {
-  title: 'Privacy Policy — CSI GCET SB',
-  description: 'Data protection and privacy commitments of Computer Society of India GCET Student Branch.',
+  title: 'Data Protection & Privacy — CSI GCET SB',
+  description: 'Data protection and student privacy governance of the Computer Society of India GCET Student Branch.',
 };
 
 export default function PrivacyPage() {
   return (
-    <div className="mx-auto max-w-4xl px-4 py-16 sm:px-6 lg:px-8">
-      <div className="space-y-8 rounded-lg border border-border bg-surface p-8 shadow-sm">
-        <div>
-          <h1 className="font-display text-3xl font-bold tracking-tight text-text">Privacy Policy</h1>
-          <p className="mt-2 text-xs text-text-muted">Last Updated: October 2026</p>
+    <div className="mx-auto max-w-4xl px-4 py-12 sm:px-6 lg:px-8 space-y-8">
+      {/* Header */}
+      <div className="space-y-3">
+        <div className="inline-flex items-center gap-2 rounded bg-primary/10 px-2.5 py-1 text-xs font-semibold text-primary border border-primary/20">
+          Institutional Governance
         </div>
+        <h1 className="font-display text-3xl font-bold tracking-tight text-text sm:text-4xl">
+          Data Protection &amp; Student Privacy Policy
+        </h1>
+        <p className="text-xs text-text-muted">
+          Last Reviewed: Academic Session 2026-27 &bull; G H Patel College of Engineering &amp; Technology
+        </p>
+      </div>
 
-        <section className="space-y-3 text-xs leading-relaxed text-text">
-          <h2 className="text-base font-semibold text-text">1. Purpose & Scope</h2>
-          <p>
-            The Computer Society of India (CSI) Student Branch at G H Patel College of Engineering &
-            Technology (GCET) is committed to protecting student and member privacy. This policy
-            outlines the personal data we collect, why we collect it, how it is secured, and your
-            rights under applicable data protection principles.
+      {/* Structured Policy Content */}
+      <div className="space-y-6">
+        <section className="rounded-xl border border-border bg-surface p-6 sm:p-8 shadow-sm space-y-3">
+          <h2 className="font-display text-lg font-bold text-text">1. Institutional Scope &amp; Purpose</h2>
+          <p className="text-xs sm:text-sm text-text-muted leading-relaxed">
+            The Computer Society of India (CSI) Student Branch at G H Patel College of Engineering &amp; Technology
+            (GCET) collects and processes student personal data exclusively to manage branch membership, conduct
+            technical symposiums, authenticate event attendance, and issue verifiable academic certificates.
           </p>
         </section>
 
-        <section className="space-y-3 text-xs leading-relaxed text-text">
-          <h2 className="text-base font-semibold text-text">2. Data We Collect</h2>
-          <ul className="list-disc pl-5 space-y-1.5 text-text-muted">
-            <li>
-              <strong className="text-text">Account Information:</strong> Full name, institutional
-              email address, academic branch, year of study, and enrollment number.
-            </li>
-            <li>
-              <strong className="text-text">Authentication & Security Credentials:</strong> Cryptographically
-              hashed passwords (Argon2id), session identifiers, and IP addresses for audit logging.
-            </li>
-            <li>
-              <strong className="text-text">Activity Data:</strong> Event registrations, attendance records,
-              workshop participation, and digital ID card issuances.
-            </li>
-          </ul>
+        <section className="rounded-xl border border-border bg-surface p-6 sm:p-8 shadow-sm space-y-3">
+          <h2 className="font-display text-lg font-bold text-text">2. Categories of Student Data Handled</h2>
+          <div className="space-y-3 text-xs sm:text-sm text-text-muted">
+            <div className="rounded border border-border bg-surface-raised p-3">
+              <strong className="text-text block mb-1">Roster &amp; Identity Records:</strong>
+              Student full name, institutional email address, department, enrollment number, and contact details
+              verified against official college enrollment records.
+            </div>
+            <div className="rounded border border-border bg-surface-raised p-3">
+              <strong className="text-text block mb-1">Authentication Credentials:</strong>
+              Argon2id cryptographic password hashes, active session tokens, and security audit logs. Plaintext
+              passwords are never stored or accessible by administrators.
+            </div>
+            <div className="rounded border border-border bg-surface-raised p-3">
+              <strong className="text-text block mb-1">Participation &amp; Certification History:</strong>
+              Symposium registrations, workshop check-in timestamps, attendance validations, and digital certificate
+              hashes.
+            </div>
+          </div>
         </section>
 
-        <section className="space-y-3 text-xs leading-relaxed text-text">
-          <h2 className="text-base font-semibold text-text">3. Security & Immutability</h2>
-          <p>
-            All security-critical actions and authentication attempts are recorded in an append-only
-            audit trail protected at the PostgreSQL database level against tampering or deletion.
-            Passwords are never stored in plaintext and cannot be recovered by administrators.
+        <section className="rounded-xl border border-border bg-surface p-6 sm:p-8 shadow-sm space-y-3">
+          <h2 className="font-display text-lg font-bold text-text">3. Security &amp; Audit Immutability</h2>
+          <p className="text-xs sm:text-sm text-text-muted leading-relaxed">
+            Security-critical operations, role assignments, and permission changes are recorded in an append-only
+            audit trail protected at the PostgreSQL database level. Access control is strictly enforced on the server
+            using least-privilege role-based access control (RBAC).
           </p>
         </section>
 
-        <section className="space-y-3 text-xs leading-relaxed text-text">
-          <h2 className="text-base font-semibold text-text">4. Third-Party Sharing</h2>
-          <p>
-            We do not sell, rent, or trade student personal data. Data is exclusively utilized
-            internally by the GCET Student Branch Core Committee and faculty advisors for student
-            branch operations, certification issuance, and event logistics.
+        <section className="rounded-xl border border-border bg-surface p-6 sm:p-8 shadow-sm space-y-3">
+          <h2 className="font-display text-lg font-bold text-text">4. Third-Party Sharing &amp; Minimization</h2>
+          <p className="text-xs sm:text-sm text-text-muted leading-relaxed">
+            Student records are never sold, rented, or commercialized. Data access is restricted to authorized
+            student branch executives and faculty counselors strictly for verified academic and operational purposes.
           </p>
         </section>
 
-        <div className="border-t border-border pt-4">
-          <Link href="/" className="text-xs font-semibold text-primary hover:underline">
-            ← Return to Homepage
-          </Link>
-        </div>
+        <section className="rounded-xl border border-border bg-surface p-6 sm:p-8 shadow-sm space-y-3">
+          <h2 className="font-display text-lg font-bold text-text">5. Student Rights &amp; Grievances</h2>
+          <p className="text-xs sm:text-sm text-text-muted leading-relaxed">
+            Students retain the right to review their active profile details, request rectification of institutional
+            records, and inquire about event participation records through the faculty counseling desk or student branch
+            secretariat.
+          </p>
+        </section>
+      </div>
+
+      <div className="border-t border-border pt-4">
+        <Link href="/" className="text-xs font-semibold text-primary hover:underline">
+          Return to Branch Homepage
+        </Link>
       </div>
     </div>
   );

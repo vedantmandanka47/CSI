@@ -1,5 +1,6 @@
 import { spawn, ChildProcess } from 'child_process';
 import { resolve } from 'path';
+import { existsSync } from 'fs';
 
 function wait(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -24,16 +25,30 @@ async function testProxy() {
   let webProcess: ChildProcess | null = null;
 
   try {
+    // Check that database configuration is available (either from process.env or apps/api/.env)
+    const apiEnvPath = resolve('apps/api/.env');
+    const hasEnvConfig = Boolean(process.env.DATABASE_URL || existsSync(apiEnvPath));
+    if (!hasEnvConfig) {
+      throw new Error(
+        '[FATAL] Neither DATABASE_URL is set in environment nor apps/api/.env exists. Cannot run proxy integration test without database configuration.',
+      );
+    }
+
+    const apiEnv: NodeJS.ProcessEnv = {
+      ...process.env,
+      NODE_ENV: 'test',
+      API_PORT: '4000',
+    };
+    // Preserve explicitly supplied DATABASE_URL; otherwise allow NestJS to load its own local apps/api/.env
+    if (process.env.DATABASE_URL) {
+      apiEnv.DATABASE_URL = process.env.DATABASE_URL;
+    }
+
     // 1. Start API (NestJS) on port 4000
     console.log('🚀 Launching NestJS API service on port 4000...');
     apiProcess = spawn(process.execPath, [resolve('apps/api/dist/main.js')], {
       cwd: resolve('apps/api'),
-      env: {
-        ...process.env,
-        NODE_ENV: 'test',
-        API_PORT: '4000',
-        DATABASE_URL: 'postgresql://csi_app:<choose-locally>@localhost:5432/csi_gcet_dev',
-      },
+      env: apiEnv,
       stdio: 'inherit',
     });
 

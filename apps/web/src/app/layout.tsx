@@ -45,8 +45,9 @@ export default function RootLayout({
       <body className="min-h-screen bg-bg text-text font-sans antialiased selection:bg-accent selection:text-white">
         <ThemeProvider
           attribute="data-theme"
-          defaultTheme="system"
-          enableSystem
+          forcedTheme="light"
+          defaultTheme="light"
+          enableSystem={false}
           disableTransitionOnChange
         >
           <AuthProvider>

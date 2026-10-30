@@ -1,6 +1,6 @@
 -- ============================================================================
 -- CSI GCET SB — One-Time Database Setup (Section 4.1)
--- Run this as PostgreSQL superuser (e.g. postgres) on Port 8085.
+-- Run this as PostgreSQL superuser (e.g. postgres) on Port 5432.
 -- Replace '<choose-locally>' with your secure local passwords.
 -- ============================================================================
 

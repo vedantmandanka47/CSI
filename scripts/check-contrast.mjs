@@ -48,8 +48,8 @@ function extractTokens(cssContent) {
   const rootMatch = cssContent.match(/:root\s*\{([\s\S]*?)\}/);
   const darkMatch = cssContent.match(/(?:\[data-theme=['"]dark['"]\]|\.dark)\s*\{([\s\S]*?)\}/);
 
-  if (!rootMatch || !darkMatch) {
-    throw new Error('Failed to parse :root or dark theme token blocks from tokens.css');
+  if (!rootMatch) {
+    throw new Error('Failed to parse :root token block from tokens.css');
   }
 
   const parseBlock = (block) => {
@@ -66,7 +66,7 @@ function extractTokens(cssContent) {
 
   return {
     light: parseBlock(rootMatch[1]),
-    dark: parseBlock(darkMatch[1])
+    dark: darkMatch ? parseBlock(darkMatch[1]) : null
   };
 }
 
@@ -122,7 +122,9 @@ function runCheck(themeName, tokens) {
 }
 
 runCheck('Light', light);
-runCheck('Dark', dark);
+if (dark) {
+  runCheck('Dark', dark);
+}
 
 if (failedCount > 0) {
   console.error(`[FAIL] ${failedCount} token contrast pairing(s) failed WCAG 2.2 AA requirements.`);

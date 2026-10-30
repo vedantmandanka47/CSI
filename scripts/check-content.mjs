@@ -75,9 +75,13 @@ function getCurrentBranch() {
 
 const args = process.argv.slice(2);
 const isStrictArg = args.includes('--strict');
-const currentBranch = getCurrentBranch();
+
+// In ordinary development, CI, and release runs, branch is always derived strictly from Git.
+// OVERRIDE_BRANCH is scoped exclusively to automated test harnesses (NODE_ENV === 'test') (RV-U3-01).
+const isTestEnv = process.env.NODE_ENV === 'test';
+const currentBranch = isTestEnv && process.env.OVERRIDE_BRANCH ? process.env.OVERRIDE_BRANCH : getCurrentBranch();
 const isReleaseBranch = currentBranch === 'main' || currentBranch === 'master' || currentBranch.startsWith('release/');
-const isStrictMode = isStrictArg || (isReleaseBranch && process.env.CI === 'true');
+const isStrictMode = isStrictArg || isReleaseBranch;
 
 console.log('================================================================');
 console.log(' CSI GCET SB — Content & Compliance Scan');

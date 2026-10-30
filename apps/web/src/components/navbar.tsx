@@ -3,11 +3,21 @@
 import React, { useState } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
+import { usePathname } from 'next/navigation';
 import { useAuth } from '@/components/auth-context';
 
 export function Navbar() {
+  const pathname = usePathname();
   const { user, isAuthenticated, isLoading, logout } = useAuth();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  const navLinks = [
+    { href: '/', label: 'Home' },
+    { href: '/events', label: 'Events' },
+    { href: '/team', label: 'Team' },
+    { href: '/about', label: 'About' },
+    { href: '/health', label: 'Status' },
+  ];
 
   return (
     <header className="sticky top-0 z-40 w-full border-b border-border bg-surface/90 backdrop-blur-md transition-colors duration-200">
@@ -28,55 +38,42 @@ export function Navbar() {
             <span className="font-display text-base font-bold tracking-tight text-text">
               CSI GCET SB
             </span>
-            <span className="text-[10px] uppercase tracking-wider text-text-muted">
+            <span className="text-xs uppercase tracking-wider text-text-muted">
               Computer Society of India
             </span>
           </div>
         </Link>
 
-        {/* Desktop Navigation Links */}
-        <nav className="hidden items-center gap-6 md:flex">
-          <Link
-            href="/"
-            className="text-sm font-medium text-text transition-colors hover:text-primary"
-          >
-            Home
-          </Link>
-          <Link
-            href="/events"
-            className="text-sm font-medium text-text-muted transition-colors hover:text-text"
-          >
-            Events
-          </Link>
-          <Link
-            href="/team"
-            className="text-sm font-medium text-text-muted transition-colors hover:text-text"
-          >
-            Team
-          </Link>
-          <Link
-            href="/about"
-            className="text-sm font-medium text-text-muted transition-colors hover:text-text"
-          >
-            About
-          </Link>
-          <Link
-            href="/health"
-            className="text-sm font-medium text-text-muted transition-colors hover:text-text"
-          >
-            Status
-          </Link>
+        {/* Desktop Navigation Links with Active State */}
+        <nav className="hidden items-center gap-1 md:flex">
+          {navLinks.map((link) => {
+            const isActive = pathname === link.href;
+            return (
+              <Link
+                key={link.href}
+                href={link.href}
+                className={`rounded-md px-3.5 py-1.5 text-sm font-medium transition-colors ${
+                  isActive
+                    ? 'bg-surface-raised font-semibold text-primary'
+                    : 'text-text-muted hover:bg-surface-raised hover:text-text'
+                }`}
+              >
+                {link.label}
+              </Link>
+            );
+          })}
         </nav>
 
-        {/* Desktop User / Auth Actions */}
+        {/* Desktop Actions: Auth */}
         <div className="hidden items-center gap-3 md:flex">
+          {/* User Status / Login Buttons */}
           {isLoading ? (
             <div className="h-8 w-20 animate-pulse rounded-md bg-surface-raised" />
           ) : isAuthenticated && user ? (
             <div className="flex items-center gap-3">
               <div className="flex flex-col text-right">
                 <span className="text-xs font-semibold text-text">{user.full_name}</span>
-                <span className="text-[10px] uppercase tracking-wider text-text-muted">
+                <span className="text-xs uppercase tracking-wider text-text-muted">
                   {user.roles[0] ?? 'member'}
                 </span>
               </div>
@@ -106,8 +103,8 @@ export function Navbar() {
           )}
         </div>
 
-        {/* Mobile Hamburger Button */}
-        <div className="flex items-center md:hidden">
+        {/* Mobile Actions: Menu Button */}
+        <div className="flex items-center gap-2 md:hidden">
           <button
             type="button"
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
@@ -135,42 +132,24 @@ export function Navbar() {
       {/* Mobile Menu Dropdown */}
       {mobileMenuOpen && (
         <div className="border-b border-border bg-surface px-4 pb-4 pt-2 md:hidden">
-          <nav className="flex flex-col gap-2">
-            <Link
-              href="/"
-              onClick={() => setMobileMenuOpen(false)}
-              className="rounded-md px-3 py-2 text-sm font-medium text-text hover:bg-surface-raised"
-            >
-              Home
-            </Link>
-            <Link
-              href="/events"
-              onClick={() => setMobileMenuOpen(false)}
-              className="rounded-md px-3 py-2 text-sm font-medium text-text-muted hover:bg-surface-raised hover:text-text"
-            >
-              Events
-            </Link>
-            <Link
-              href="/team"
-              onClick={() => setMobileMenuOpen(false)}
-              className="rounded-md px-3 py-2 text-sm font-medium text-text-muted hover:bg-surface-raised hover:text-text"
-            >
-              Team
-            </Link>
-            <Link
-              href="/about"
-              onClick={() => setMobileMenuOpen(false)}
-              className="rounded-md px-3 py-2 text-sm font-medium text-text-muted hover:bg-surface-raised hover:text-text"
-            >
-              About
-            </Link>
-            <Link
-              href="/health"
-              onClick={() => setMobileMenuOpen(false)}
-              className="rounded-md px-3 py-2 text-sm font-medium text-text-muted hover:bg-surface-raised hover:text-text"
-            >
-              Status
-            </Link>
+          <nav className="flex flex-col gap-1">
+            {navLinks.map((link) => {
+              const isActive = pathname === link.href;
+              return (
+                <Link
+                  key={link.href}
+                  href={link.href}
+                  onClick={() => setMobileMenuOpen(false)}
+                  className={`rounded-md px-3 py-2 text-sm font-medium ${
+                    isActive
+                      ? 'bg-surface-raised font-semibold text-primary'
+                      : 'text-text-muted hover:bg-surface-raised hover:text-text'
+                  }`}
+                >
+                  {link.label}
+                </Link>
+              );
+            })}
 
             <div className="mt-3 border-t border-border pt-3">
               {isAuthenticated && user ? (
@@ -214,4 +193,3 @@ export function Navbar() {
     </header>
   );
 }
-

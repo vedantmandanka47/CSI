@@ -8,5 +8,8 @@
   "moduleNameMapper": {
     "^(\\.{1,2}/.*)\\.js$": "$1"
   },
-  "testEnvironment": "node"
+  "setupFiles": ["<rootDir>/setup-e2e.ts"],
+  "testEnvironment": "node",
+  "maxWorkers": 1
 }
+

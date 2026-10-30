@@ -68,10 +68,11 @@ describe('Auth Schemas', () => {
     expect(verify.token).toBe('abc123token');
   });
 
-  it('validates current user schema', () => {
+  it('validates current user schema with both full_name and optional name (U4)', () => {
     const user = CurrentUserSchema.parse({
       id: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
       email: 'admin@gcet.ac.in',
+      name: 'Site Admin',
       full_name: 'Site Admin',
       status: 'active',
       enrollment_no: null,
@@ -80,6 +81,8 @@ describe('Auth Schemas', () => {
       permissions: ['ALL'],
     });
     expect(user.roles).toContain('admin');
+    expect(user.full_name).toBe('Site Admin');
+    expect(user.name).toBe('Site Admin');
   });
 });
 

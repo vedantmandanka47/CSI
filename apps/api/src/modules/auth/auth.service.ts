@@ -264,6 +264,7 @@ export class AuthService {
     const currentUser: CurrentUser = {
       id: user.id,
       email: user.email,
+      name: user.name,
       full_name: user.name,
       status: user.status as UserStatus,
       enrollment_no: user.enrollmentNo,
@@ -440,6 +441,7 @@ export class AuthService {
     return {
       id: user.id,
       email: user.email,
+      name: user.name,
       full_name: user.name,
       status: user.status as UserStatus,
       enrollment_no: user.enrollmentNo,

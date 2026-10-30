@@ -14,6 +14,16 @@ async function runMigrationTest() {
   const client = new Client({ connectionString: testDbUrl });
   await client.connect();
 
+  // Strict fail-closed target verification (U1 / Finding F-01)
+  const dbCheck = await client.query<{ current_database: string }>('SELECT current_database();');
+  const liveDbName = dbCheck.rows[0]?.current_database;
+  if (liveDbName !== 'csi_gcet_test') {
+    throw new Error(
+      `[SAFETY FATAL] Migration lifecycle test refuses to run against "${liveDbName}". Target MUST be strictly "csi_gcet_test". Aborting before executing any SQL.`,
+    );
+  }
+  console.log(`🔒 [VERIFIED] Live database verified as "${liveDbName}".`);
+
   const migrationsRoot = resolve(process.cwd(), 'apps/api/prisma/migrations');
   const migrationDirs = readdirSync(migrationsRoot)
     .filter((name) => statSync(join(migrationsRoot, name)).isDirectory())
@@ -28,6 +38,9 @@ async function runMigrationTest() {
     'users',
     'roster_entries',
     'role_assignments',
+    'sessions',
+    'verification_tokens',
+    'password_reset_tokens',
   ];
 
   try {
