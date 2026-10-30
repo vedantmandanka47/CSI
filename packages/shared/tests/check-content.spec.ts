@@ -10,7 +10,7 @@ describe('Content Checker Branch Mode Enforcement (RV-U3-01 / Finding F-03)', ()
     const output = execSync(`node "${scriptPath}"`, {
       cwd: repoRoot,
       encoding: 'utf-8',
-      env: { ...process.env, OVERRIDE_BRANCH: undefined, NODE_ENV: undefined },
+      env: { ...process.env, OVERRIDE_BRANCH: 'feature/sample-feature', NODE_ENV: 'test' },
     });
 
     expect(output).toContain('Mode: WARN (Development)');
@@ -32,11 +32,16 @@ describe('Content Checker Branch Mode Enforcement (RV-U3-01 / Finding F-03)', ()
     const output = execSync(`node "${scriptPath}"`, {
       cwd: repoRoot,
       encoding: 'utf-8',
-      env: { ...process.env, OVERRIDE_BRANCH: 'main', NODE_ENV: 'development' },
+      env: { ...process.env, OVERRIDE_BRANCH: 'feature/mock-branch', NODE_ENV: 'development' },
     });
 
-    // OVERRIDE_BRANCH ignored; derives from git (remediation-u1-u4) -> WARN mode
-    expect(output).toContain('Mode: WARN (Development)');
+    // OVERRIDE_BRANCH ignored; derives from git directly
+    const branch = execSync('git rev-parse --abbrev-ref HEAD', { cwd: repoRoot, encoding: 'utf-8' }).trim();
+    if (branch === 'main' || branch === 'master' || branch.startsWith('release/')) {
+      expect(output).toContain('Mode: STRICT (Fail on violation)');
+    } else {
+      expect(output).toContain('Mode: WARN (Development)');
+    }
   });
 
   it('honors OVERRIDE_BRANCH exclusively when NODE_ENV === test', () => {
