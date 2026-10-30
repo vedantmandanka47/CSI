@@ -132,4 +132,16 @@ This matrix maps every functional requirement (`FR-`), architectural rule (`ARCH
 | **UI-M9-02** | Live Organizer Attendance Hub (`/admin/attendance`) with session creator, live attendee roster, projector podium mode, and rotating 6-digit TOTP display | `apps/web/src/app/admin/attendance/page.tsx` | Next.js build compilation, `check-hardcoded-colors.mjs` | **VERIFIED** |
 | **UI-M9-03** | Field Volunteer Scanner Station (`/scanner`) supporting camera viewfinder, Bluetooth 2D barcode scanner, 6-digit TOTP code entry, manual override with reason, offline IndexedDB queue, and reconciliation sync | `apps/web/src/app/scanner/page.tsx`, `offline-queue.ts` | Next.js build compilation, `offline-queue.spec.ts` | **VERIFIED** |
 
+### Module M10: Campus Venue Registry & Mathematical Double-Booking Prevention
+
+| Requirement ID | Description | Implementing Component | Automated Test Suite / Verification | Status |
+|---|---|---|---|:---:|
+| **FR-VEN-01** | Relational `venues` schema with building, room number, AV capabilities array, operational availability, active status, and positive capacity | `apps/api/prisma/schema.prisma`, `migration.sql` | `test-migration-lifecycle.ts` (UP->DOWN->UP) | **VERIFIED** |
+| **FR-VEN-02** | Venue Management API (`GET /api/venues`, `GET /api/venues/:id`, `POST /api/venues`, `PUT /api/venues/:id`) with public data minimization and admin RBAC (`venue.book`) with immutable audit logging | `apps/api/src/modules/venues/venues.service.ts`, `venues.controller.ts` | `venues.service.spec.ts`, `app.e2e-spec.ts` | **VERIFIED** |
+| **FR-VEN-03** | Live Pre-Booking Conflict Checker API (`POST /api/events/check-conflicts`) detecting active reservation overlaps and active venue standing before submission | `apps/api/src/modules/events/events.service.ts`, `events.controller.ts` | `events.service.spec.ts`, `app.e2e-spec.ts` | **VERIFIED** |
+| **FR-EVT-EXCL** | Native PostgreSQL `btree_gist` Exclusion Constraint (`events_venue_time_excl`) enforcing half-open interval `[start, end)` mathematical double-booking prevention; cancelled events excluded | `apps/api/prisma/migrations/20261102000000_venues_and_exclusion_constraint/migration.sql` | `scripts/test-venue-exclusion.ts` (6/6 tests), `events.service.spec.ts` | **VERIFIED** |
+| **ARCH-23P01** | Database engine SQLSTATE `23P01` exclusion violation translation to standard HTTP 409 `VENUE_CONFLICT` error envelope | `apps/api/src/modules/events/events.service.ts` | `events.service.spec.ts`, `app.e2e-spec.ts` | **VERIFIED** |
+| **UI-M10-01** | Campus Venue Registry interface (`/admin/venues`) with building/capacity/AV filters, operational status badges, and modal create/update forms | `apps/web/src/app/admin/venues/page.tsx`, `navbar.tsx` | Next.js build compilation, `check-hardcoded-colors.mjs`, `check-contrast.mjs` | **VERIFIED** |
+| **UI-M10-02** | Live Conflict Detector & Event Booking Terminal (`/admin/venues`) with real-time pass/conflict cards and database-protected reservation submission | `apps/web/src/app/admin/venues/page.tsx` | Next.js build compilation, WCAG 2.2 AA contrast scan | **VERIFIED** |
+
 

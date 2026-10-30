@@ -32,6 +32,7 @@ export function Navbar() {
     { href: '/events', label: 'Events' },
     ...(isAuthenticated ? [{ href: '/dashboard', label: 'Dashboard' }] : []),
     ...(isVolunteerOrExecutive ? [{ href: '/scanner', label: 'Scanner' }] : []),
+    ...(isVolunteerOrExecutive ? [{ href: '/admin/venues', label: 'Venues' }] : []),
     { href: '/team', label: 'Team' },
     { href: '/about', label: 'About' },
     { href: '/health', label: 'Status' },

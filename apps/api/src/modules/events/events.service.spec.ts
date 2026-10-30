@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { NotFoundException, ConflictException } from '@nestjs/common';
+import { NotFoundException, ConflictException, BadRequestException } from '@nestjs/common';
 import { EventsService } from './events.service.js';
 import { PrismaService } from '../../infra/prisma/prisma.service.js';
 import { EventState, RegistrationStatus, EventCategory } from '@csi/shared';
@@ -9,6 +9,12 @@ interface MockPrisma {
     findMany: jest.Mock;
     count: jest.Mock;
     findFirst: jest.Mock;
+    findUnique: jest.Mock;
+    create: jest.Mock;
+    update: jest.Mock;
+  };
+  venue: {
+    findUnique: jest.Mock;
   };
   registration: {
     findUnique: jest.Mock;
@@ -64,6 +70,17 @@ describe('EventsService', () => {
         findMany: jest.fn().mockResolvedValue([sampleEvent]),
         count: jest.fn().mockResolvedValue(1),
         findFirst: jest.fn().mockResolvedValue(sampleEvent),
+        findUnique: jest.fn().mockResolvedValue(sampleEvent),
+        create: jest.fn(),
+        update: jest.fn(),
+      },
+      venue: {
+        findUnique: jest.fn().mockResolvedValue({
+          id: '22222222-2222-2222-2222-222222222222',
+          name: 'Lab 301',
+          capacity: 50,
+          isActive: true,
+        }),
       },
       registration: {
         findUnique: jest.fn(),
@@ -256,6 +273,131 @@ describe('EventsService', () => {
       expect(ics).toContain('LOCATION:Lab 301');
       expect(ics).toContain('END:VEVENT');
       expect(ics).toContain('END:VCALENDAR');
+    });
+  });
+
+  describe('createEvent & updateEvent (M10)', () => {
+    it('creates an event with venue validation and writes audit log', async () => {
+      mockPrisma.event.findUnique.mockResolvedValueOnce(null); // No existing slug
+      mockPrisma.venue.findUnique.mockResolvedValueOnce({
+        id: 'venue-1',
+        name: 'Seminar Hall',
+        capacity: 100,
+        isActive: true,
+      });
+
+      mockPrisma.event.create.mockResolvedValueOnce({
+        id: 'new-event-id',
+        slug: 'react-masterclass',
+        title: 'React Masterclass',
+        venueId: 'venue-1',
+        startsAt: new Date('2026-11-20T10:00:00Z'),
+        endsAt: new Date('2026-11-20T12:00:00Z'),
+      });
+
+      const res = await service.createEvent(
+        {
+          slug: 'react-masterclass',
+          title: 'React Masterclass',
+          description: 'Hands-on React workshop',
+          category: 'workshop',
+          venue_id: 'venue-1',
+          starts_at: '2026-11-20T10:00:00Z',
+          ends_at: '2026-11-20T12:00:00Z',
+          capacity: 80,
+          state: EventState.DRAFT,
+        },
+        'creator-user-id',
+      );
+
+      expect(res.id).toBe('new-event-id');
+      expect(mockPrisma.auditLog.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ action: 'EVENT_CREATED' }),
+        }),
+      );
+    });
+
+    it('rejects event creation when venue capacity is exceeded', async () => {
+      mockPrisma.venue.findUnique.mockResolvedValueOnce({
+        id: 'venue-small',
+        name: 'Small Room',
+        capacity: 30,
+        isActive: true,
+      });
+
+      await expect(
+        service.createEvent(
+          {
+            slug: 'large-conf',
+            title: 'Large Conference',
+            description: 'Too many attendees',
+            category: 'seminar',
+            venue_id: 'venue-small',
+            starts_at: '2026-11-20T10:00:00Z',
+            ends_at: '2026-11-20T12:00:00Z',
+            capacity: 50,
+          },
+          'creator-user-id',
+        ),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('rejects event creation when venue is inactive', async () => {
+      mockPrisma.venue.findUnique.mockResolvedValueOnce({
+        id: 'venue-inactive',
+        name: 'Closed Room',
+        capacity: 100,
+        isActive: false,
+      });
+
+      await expect(
+        service.createEvent(
+          {
+            slug: 'event-inactive-venue',
+            title: 'Event in Closed Room',
+            description: 'Cannot book',
+            category: 'workshop',
+            venue_id: 'venue-inactive',
+            starts_at: '2026-11-20T10:00:00Z',
+            ends_at: '2026-11-20T12:00:00Z',
+            capacity: 50,
+          },
+          'creator-user-id',
+        ),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('catches PostgreSQL 23P01 exclusion violation and translates to ConflictException', async () => {
+      mockPrisma.event.findUnique.mockResolvedValueOnce(null);
+      mockPrisma.venue.findUnique.mockResolvedValueOnce({
+        id: 'venue-1',
+        name: 'Hall',
+        capacity: 100,
+        isActive: true,
+      });
+
+      const pgExclusionError = Object.assign(
+        new Error('conflicting key value violates exclusion constraint "events_venue_time_excl"'),
+        { code: '23P01' },
+      );
+      mockPrisma.event.create.mockRejectedValueOnce(pgExclusionError);
+
+      await expect(
+        service.createEvent(
+          {
+            slug: 'clashing-event',
+            title: 'Clashing Event',
+            description: 'Will conflict',
+            category: 'workshop',
+            venue_id: 'venue-1',
+            starts_at: '2026-11-20T10:00:00Z',
+            ends_at: '2026-11-20T12:00:00Z',
+            capacity: 50,
+          },
+          'creator-user-id',
+        ),
+      ).rejects.toThrow(ConflictException);
     });
   });
 });

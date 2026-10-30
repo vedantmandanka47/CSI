@@ -15,6 +15,9 @@ import {
   EventState,
   RegistrationStatus,
   ErrorCode,
+  CreateEventInput,
+  CreateEventRawInput,
+  UpdateEventInput,
 } from '@csi/shared';
 
 interface LockedEventRow {
@@ -701,5 +704,231 @@ export class EventsService {
 
     lines.push('END:VCALENDAR');
     return lines.join('\r\n') + '\r\n';
+  }
+
+  /**
+   * Helper to identify PostgreSQL exclusion constraint violation (SQLSTATE 23P01)
+   */
+  private isExclusionViolation(err: unknown): boolean {
+    if (!err) return false;
+    const e = err as { code?: string; message?: string };
+    if (e.code === '23P01') return true;
+    if (typeof e.message === 'string') {
+      if (
+        e.message.includes('23P01') ||
+        e.message.includes('events_venue_time_excl') ||
+        e.message.includes('conflicting key value violates exclusion constraint')
+      ) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /**
+   * Create a new event with venue validation & exclusion conflict enforcement.
+   */
+  async createEvent(input: CreateEventInput | CreateEventRawInput, actorId: string) {
+    const startsAt = new Date(input.starts_at);
+    const endsAt = new Date(input.ends_at);
+
+    if (endsAt <= startsAt) {
+      throw new BadRequestException({
+        code: ErrorCode.VALIDATION_ERROR,
+        message: 'Event end time must be after start time.',
+      });
+    }
+
+    const eventCapacity = input.capacity ?? 50;
+    if (input.venue_id) {
+      const venue = await this.prisma.venue.findUnique({
+        where: { id: input.venue_id },
+      });
+      if (!venue) {
+        throw new NotFoundException({
+          code: ErrorCode.VENUE_NOT_FOUND,
+          message: 'Selected venue does not exist.',
+        });
+      }
+      if (!venue.isActive) {
+        throw new BadRequestException({
+          code: ErrorCode.VENUE_CONFLICT,
+          message: 'Selected venue is inactive and cannot be booked.',
+        });
+      }
+      if (eventCapacity > venue.capacity) {
+        throw new BadRequestException({
+          code: ErrorCode.CAPACITY_EXCEEDED,
+          message: `Event capacity (${eventCapacity}) cannot exceed venue maximum capacity (${venue.capacity}).`,
+        });
+      }
+    }
+
+    // Check slug uniqueness
+    const existingSlug = await this.prisma.event.findUnique({
+      where: { slug: input.slug },
+    });
+    if (existingSlug) {
+      throw new ConflictException({
+        code: ErrorCode.CONFLICT,
+        message: `An event with slug "${input.slug}" already exists.`,
+      });
+    }
+
+    try {
+      const event = await this.prisma.event.create({
+        data: {
+          slug: input.slug,
+          title: input.title,
+          description: input.description,
+          category: input.category || 'workshop',
+          venueId: input.venue_id || null,
+          startsAt,
+          endsAt,
+          registrationOpensAt: input.registration_opens_at ? new Date(input.registration_opens_at) : null,
+          registrationClosesAt: input.registration_closes_at ? new Date(input.registration_closes_at) : null,
+          capacity: eventCapacity,
+          state: input.state || EventState.DRAFT,
+          posterUrl: input.poster_url || null,
+          certificateTemplateId: input.certificate_template_id || null,
+        },
+      });
+
+      await this.prisma.auditLog.create({
+        data: {
+          actorId,
+          action: 'EVENT_CREATED',
+          targetType: 'event',
+          targetId: event.id,
+          afterJson: {
+            slug: event.slug,
+            title: event.title,
+            venue_id: event.venueId,
+            starts_at: event.startsAt.toISOString(),
+            ends_at: event.endsAt.toISOString(),
+          },
+        },
+      });
+
+      return event;
+    } catch (err: unknown) {
+      if (this.isExclusionViolation(err)) {
+        throw new ConflictException({
+          code: ErrorCode.VENUE_CONFLICT,
+          message: 'Venue is already reserved for another event during this time window.',
+        });
+      }
+      throw err;
+    }
+  }
+
+  /**
+   * Update an existing event with venue & time validation.
+   */
+  async updateEvent(id: string, input: UpdateEventInput, actorId: string) {
+    const existing = await this.prisma.event.findUnique({
+      where: { id },
+    });
+    if (!existing) {
+      throw new NotFoundException({
+        code: ErrorCode.EVENT_NOT_FOUND,
+        message: 'Event not found.',
+      });
+    }
+
+    const startsAt = input.starts_at ? new Date(input.starts_at) : existing.startsAt;
+    const endsAt = input.ends_at ? new Date(input.ends_at) : existing.endsAt;
+
+    if (endsAt <= startsAt) {
+      throw new BadRequestException({
+        code: ErrorCode.VALIDATION_ERROR,
+        message: 'Event end time must be after start time.',
+      });
+    }
+
+    const targetVenueId = input.venue_id !== undefined ? input.venue_id : existing.venueId;
+    const targetCapacity = input.capacity ?? existing.capacity;
+
+    if (targetVenueId) {
+      const venue = await this.prisma.venue.findUnique({
+        where: { id: targetVenueId },
+      });
+      if (!venue) {
+        throw new NotFoundException({
+          code: ErrorCode.VENUE_NOT_FOUND,
+          message: 'Selected venue does not exist.',
+        });
+      }
+      if (!venue.isActive) {
+        throw new BadRequestException({
+          code: ErrorCode.VENUE_CONFLICT,
+          message: 'Selected venue is inactive and cannot be booked.',
+        });
+      }
+      if (targetCapacity > venue.capacity) {
+        throw new BadRequestException({
+          code: ErrorCode.CAPACITY_EXCEEDED,
+          message: `Event capacity (${targetCapacity}) cannot exceed venue maximum capacity (${venue.capacity}).`,
+        });
+      }
+    }
+
+    try {
+      const updated = await this.prisma.event.update({
+        where: { id },
+        data: {
+          slug: input.slug,
+          title: input.title,
+          description: input.description,
+          category: input.category,
+          venueId: input.venue_id,
+          startsAt: input.starts_at ? new Date(input.starts_at) : undefined,
+          endsAt: input.ends_at ? new Date(input.ends_at) : undefined,
+          registrationOpensAt: input.registration_opens_at !== undefined
+            ? input.registration_opens_at ? new Date(input.registration_opens_at) : null
+            : undefined,
+          registrationClosesAt: input.registration_closes_at !== undefined
+            ? input.registration_closes_at ? new Date(input.registration_closes_at) : null
+            : undefined,
+          capacity: input.capacity,
+          state: input.state,
+          posterUrl: input.poster_url,
+          certificateTemplateId: input.certificate_template_id,
+        },
+      });
+
+      await this.prisma.auditLog.create({
+        data: {
+          actorId,
+          action: 'EVENT_UPDATED',
+          targetType: 'event',
+          targetId: id,
+          beforeJson: {
+            title: existing.title,
+            venue_id: existing.venueId,
+            starts_at: existing.startsAt.toISOString(),
+            ends_at: existing.endsAt.toISOString(),
+            state: existing.state,
+          },
+          afterJson: {
+            title: updated.title,
+            venue_id: updated.venueId,
+            starts_at: updated.startsAt.toISOString(),
+            ends_at: updated.endsAt.toISOString(),
+            state: updated.state,
+          },
+        },
+      });
+
+      return updated;
+    } catch (err: unknown) {
+      if (this.isExclusionViolation(err)) {
+        throw new ConflictException({
+          code: ErrorCode.VENUE_CONFLICT,
+          message: 'Venue is already reserved for another event during this time window.',
+        });
+      }
+      throw err;
+    }
   }
 }

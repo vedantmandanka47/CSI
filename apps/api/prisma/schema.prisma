@@ -144,14 +144,21 @@ model PasswordResetToken {
 
 
 model Venue {
-  id        String   @id @default(uuid()) @db.Uuid
-  name      String   @db.VarChar(100)
-  capacity  Int
-  mapUrl    String?  @map("map_url") @db.VarChar(255)
-  contact   String?  @db.VarChar(100)
-  notes     String?  @db.Text
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  events    Event[]
+  id              String   @id @default(uuid()) @db.Uuid
+  name            String   @db.VarChar(100)
+  description     String?  @db.Text
+  building        String   @default("Main Building") @db.VarChar(100)
+  roomNumber      String?  @map("room_number") @db.VarChar(50)
+  capacity        Int
+  mapUrl          String?  @map("map_url") @db.VarChar(255)
+  contact         String?  @db.VarChar(100)
+  notes           String?  @db.Text
+  avCapabilities  String[] @default([]) @map("av_capabilities")
+  isAvailable     Boolean  @default(true) @map("is_available")
+  isActive        Boolean  @default(true) @map("is_active")
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  events          Event[]
 
   @@map("venues")
 }

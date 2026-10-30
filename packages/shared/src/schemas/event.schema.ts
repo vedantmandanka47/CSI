@@ -94,3 +94,64 @@ export type RegistrationResponse = z.infer<typeof RegistrationResponseSchema>;
 export const PaginatedEventsResponseSchema = createPaginatedResponseSchema(PublicEventSummarySchema);
 export const SingleEventResponseSchema = createSingleResponseSchema(PublicEventDetailSchema);
 export const SingleRegistrationResponseSchema = createSingleResponseSchema(RegistrationResponseSchema);
+
+export const CreateEventSchema = z
+  .object({
+    slug: z
+      .string()
+      .trim()
+      .min(2)
+      .max(100)
+      .regex(/^[a-z0-9-]+$/, 'Slug must be lower-case alphanumeric with hyphens'),
+    title: z.string().trim().min(3, 'Title must be at least 3 characters').max(200),
+    description: z.string().trim().min(10, 'Description must be at least 10 characters'),
+    category: z.string().trim().min(2).max(50).default('workshop'),
+    venue_id: z.string().uuid().optional().nullable(),
+    starts_at: z.string().datetime({ message: 'Start time must be a valid ISO 8601 datetime.' }),
+    ends_at: z.string().datetime({ message: 'End time must be a valid ISO 8601 datetime.' }),
+    registration_opens_at: z.string().datetime().optional().nullable(),
+    registration_closes_at: z.string().datetime().optional().nullable(),
+    capacity: z.number().int().positive('Capacity must be a positive integer').default(50),
+    state: z.nativeEnum(EventState).default(EventState.DRAFT),
+    poster_url: z.string().url().max(255).optional().nullable().or(z.literal('')),
+    certificate_template_id: z.string().uuid().optional().nullable(),
+  })
+  .refine((data) => new Date(data.ends_at) > new Date(data.starts_at), {
+    message: 'Event end time must be after start time.',
+    path: ['ends_at'],
+  });
+
+export type CreateEventInput = z.infer<typeof CreateEventSchema>;
+export type CreateEventRawInput = z.input<typeof CreateEventSchema>;
+
+export const UpdateEventSchema = z
+  .object({
+    slug: z.string().trim().min(2).max(100).regex(/^[a-z0-9-]+$/).optional(),
+    title: z.string().trim().min(3).max(200).optional(),
+    description: z.string().trim().min(10).optional(),
+    category: z.string().trim().min(2).max(50).optional(),
+    venue_id: z.string().uuid().optional().nullable(),
+    starts_at: z.string().datetime().optional(),
+    ends_at: z.string().datetime().optional(),
+    registration_opens_at: z.string().datetime().optional().nullable(),
+    registration_closes_at: z.string().datetime().optional().nullable(),
+    capacity: z.number().int().positive().optional(),
+    state: z.nativeEnum(EventState).optional(),
+    poster_url: z.string().url().max(255).optional().nullable().or(z.literal('')),
+    certificate_template_id: z.string().uuid().optional().nullable(),
+  })
+  .refine(
+    (data) => {
+      if (data.starts_at && data.ends_at) {
+        return new Date(data.ends_at) > new Date(data.starts_at);
+      }
+      return true;
+    },
+    {
+      message: 'Event end time must be after start time.',
+      path: ['ends_at'],
+    },
+  );
+
+export type UpdateEventInput = z.infer<typeof UpdateEventSchema>;
+

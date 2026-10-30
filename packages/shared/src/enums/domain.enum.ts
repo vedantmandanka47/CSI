@@ -53,3 +53,17 @@ export const RecipientType = {
 } as const;
 
 export type RecipientType = (typeof RecipientType)[keyof typeof RecipientType];
+
+export const AvCapability = {
+  PROJECTOR: 'projector',
+  DISPLAY: 'display',
+  AUDIO_SYSTEM: 'audio_system',
+  MICROPHONE: 'microphone',
+  WHITEBOARD: 'whiteboard',
+  INTERNET: 'internet',
+  COMPUTERS: 'computers',
+  RECORDING: 'recording',
+} as const;
+
+export type AvCapability = (typeof AvCapability)[keyof typeof AvCapability];
+export const ALL_AV_CAPABILITIES = Object.values(AvCapability);

@@ -189,4 +189,48 @@ describe('API Foundation & Health (E2E) (DEP-13, ARCH-05, ARCH-15)', () => {
       .expect(401);
     expect(syncRes.body.error.code).toBe('UNAUTHENTICATED');
   });
+
+  // M10: Campus Venue Registry & Double-Booking Prevention E2E Tests
+  it('GET /api/venues (Public) returns 200 with list of active venues', async () => {
+    const response = await request(app.getHttpServer()).get('/api/venues').expect(200);
+    expect(response.body.data).toBeDefined();
+    expect(Array.isArray(response.body.data)).toBe(true);
+  });
+
+  it('POST /api/venues & POST /api/events/check-conflicts require authentication (RBAC)', async () => {
+    const dummyCsrf = 'csrf-test-token-value';
+    const venueRes = await request(app.getHttpServer())
+      .post('/api/venues')
+      .set('Cookie', [`csi_csrf=${dummyCsrf}`])
+      .set('X-CSRF-Token', dummyCsrf)
+      .send({ name: 'Auditorium', building: 'Main', capacity: 100 })
+      .expect(401);
+    expect(venueRes.body.error.code).toBe('UNAUTHENTICATED');
+
+    const conflictRes = await request(app.getHttpServer())
+      .post('/api/events/check-conflicts')
+      .set('Cookie', [`csi_csrf=${dummyCsrf}`])
+      .set('X-CSRF-Token', dummyCsrf)
+      .send({
+        venue_id: '00000000-0000-0000-0000-000000000000',
+        starts_at: '2026-11-20T10:00:00Z',
+        ends_at: '2026-11-20T12:00:00Z',
+      })
+      .expect(401);
+    expect(conflictRes.body.error.code).toBe('UNAUTHENTICATED');
+
+    const eventCreateRes = await request(app.getHttpServer())
+      .post('/api/events')
+      .set('Cookie', [`csi_csrf=${dummyCsrf}`])
+      .set('X-CSRF-Token', dummyCsrf)
+      .send({
+        slug: 'test-event',
+        title: 'Test Event',
+        description: 'Test description',
+        starts_at: '2026-11-20T10:00:00Z',
+        ends_at: '2026-11-20T12:00:00Z',
+      })
+      .expect(401);
+    expect(eventCreateRes.body.error.code).toBe('UNAUTHENTICATED');
+  });
 });

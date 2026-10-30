@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Post,
+  Put,
   Param,
   Query,
   Body,
@@ -13,20 +14,26 @@ import {
 } from '@nestjs/common';
 import { Request, Response } from 'express';
 import { EventsService } from './events.service.js';
+import { VenuesService } from '../venues/venues.service.js';
 import {
   EventListQuerySchema,
   GuestRegisterSchema,
+  CreateEventSchema,
+  UpdateEventSchema,
+  CheckConflictSchema,
+  PermissionCode,
   CurrentUser,
   PublicEventDetail,
   RegistrationResponse,
 } from '@csi/shared';
-import { Public, ReqUser } from '../../common/decorators/index.js';
+import { Public, RequirePermission, ReqUser } from '../../common/decorators/index.js';
 import { RateLimiterService } from '../../common/services/rate-limiter.service.js';
 
 @Controller('events')
 export class EventsController {
   constructor(
     private readonly eventsService: EventsService,
+    private readonly venuesService: VenuesService,
     private readonly rateLimiter: RateLimiterService,
   ) {}
 
@@ -151,5 +158,75 @@ export class EventsController {
     @ReqUser() currentUser: CurrentUser,
   ): Promise<{ message: string; promoted_waitlist_id?: string }> {
     return this.eventsService.cancelRegistration(eventId, currentUser.id);
+  }
+
+  /**
+   * Check venue availability and identify potential double-booking conflicts
+   */
+  @Post('check-conflicts')
+  @RequirePermission(PermissionCode.VENUE_BOOK)
+  @HttpCode(HttpStatus.OK)
+  async checkConflicts(@Body() rawBody: unknown) {
+    const parseResult = CheckConflictSchema.safeParse(rawBody);
+    if (!parseResult.success) {
+      throw new BadRequestException({
+        code: 'VALIDATION_ERROR',
+        message: 'Invalid conflict check parameters.',
+        fields: parseResult.error.flatten().fieldErrors,
+      });
+    }
+
+    const data = await this.venuesService.checkConflict(
+      parseResult.data.venue_id,
+      new Date(parseResult.data.starts_at),
+      new Date(parseResult.data.ends_at),
+      parseResult.data.exclude_event_id,
+    );
+    return { data };
+  }
+
+  /**
+   * Create an event with venue booking and mathematical conflict prevention (Core/Admin)
+   */
+  @Post()
+  @RequirePermission(PermissionCode.EVENT_CREATE)
+  async createEvent(
+    @Body() rawBody: unknown,
+    @ReqUser() currentUser: CurrentUser,
+  ) {
+    const parseResult = CreateEventSchema.safeParse(rawBody);
+    if (!parseResult.success) {
+      throw new BadRequestException({
+        code: 'VALIDATION_ERROR',
+        message: 'Invalid event creation payload.',
+        fields: parseResult.error.flatten().fieldErrors,
+      });
+    }
+
+    const data = await this.eventsService.createEvent(parseResult.data, currentUser.id);
+    return { data };
+  }
+
+  /**
+   * Update an event's schedule, venue, or details with conflict checks (Core/Admin)
+   */
+  @Put(':id')
+  @RequirePermission(PermissionCode.EVENT_EDIT)
+  async updateEvent(
+    @Param('id') id: string,
+    @Body() rawBody: unknown,
+    @ReqUser() currentUser: CurrentUser,
+  ) {
+    const parseResult = UpdateEventSchema.safeParse(rawBody);
+    if (!parseResult.success) {
+      throw new BadRequestException({
+        code: 'VALIDATION_ERROR',
+        message: 'Invalid event update payload.',
+        fields: parseResult.error.flatten().fieldErrors,
+      });
+    }
+
+    const data = await this.eventsService.updateEvent(id, parseResult.data, currentUser.id);
+    return { data };
   }
 }

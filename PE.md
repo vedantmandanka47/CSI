@@ -242,7 +242,7 @@ Finalize operational resilience, conduct rigorous data protection audits in acco
 | **Phase 2** | **Module M7** | Events & Calendar | Event discovery, Concurrency-safe registration, RFC 5545 ICS feeds | Unit tests, concurrency simulation, ICS parser | **100% Complete & Published** |
 | **Phase 2** | **Module M8** | Membership | Drive window toggles, application review, digital ID QR pass | QR signing test, status lifecycle test | **100% Complete & Verified** |
 | **Phase 2** | **Module M9** | Member Portal | Self-service dashboard, Dynamic check-in sessions, Offline queue | Offline sync reconciliation, TOTP checks | **100% Complete & Verified** |
-| **Phase 2** | **Module M10** | Venue Engine | Facility registry, PostgreSQL GIST exclusion constraint | GIST overlap test (`23P01` conflict code) | Scheduled |
+| **Phase 2** | **Module M10** | Venue Engine | Facility registry, PostgreSQL GIST exclusion constraint | GIST overlap test (`23P01` conflict code) | **100% Complete & Verified** |
 | **Phase 3** | **Module M11** | Credentials | Pure JS PDF template engine (`pdf-lib`), vector merge engine | PDF render fidelity, fontkit embed test | Scheduled |
 | **Phase 3** | **Module M12** | Batch Issuance | Background job processing (pg-boss), Idempotency-Key guard | Idempotency replay test, attendance gate test | Scheduled |
 | **Phase 3** | **Module M13** | Verification | Public verification portal (`/verify/[code]`), base32 codes | Rate limit test, revocation state test | Scheduled |

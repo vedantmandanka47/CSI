@@ -11,3 +11,4 @@ export * from './member-application.schema.js';
 export * from './id-card.schema.js';
 export * from './attendance.schema.js';
 export * from './dashboard.schema.js';
+export * from './venue.schema.js';
