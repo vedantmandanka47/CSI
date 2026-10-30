@@ -37,6 +37,26 @@ describe('API Foundation & Health (E2E) (DEP-13, ARCH-05, ARCH-15)', () => {
     expect(response.headers['x-request-id']).toBeDefined();
   });
 
+  it('GET /api/public/status returns 200 with aggregates and drive window (ARCH-05, SEC-09)', async () => {
+    const response = await request(app.getHttpServer()).get('/api/public/status').expect(200);
+
+    expect(response.body.aggregates).toBeDefined();
+    expect(typeof response.body.aggregates.active_members).toBe('number');
+    expect(typeof response.body.aggregates.total_events).toBe('number');
+    expect(typeof response.body.aggregates.certificates_issued).toBe('number');
+
+    expect(response.body.membership_drive).toBeDefined();
+    expect(typeof response.body.membership_drive.is_open).toBe('boolean');
+    expect(typeof response.body.membership_drive.message).toBe('string');
+
+    // SEC-07 / SEC-24: Assert no sensitive fields or user lists are leaked
+    expect(response.body.users).toBeUndefined();
+    expect(response.body.email).toBeUndefined();
+    expect(response.body.password).toBeUndefined();
+    expect(response.body.token).toBeUndefined();
+    expect(response.headers['x-request-id']).toBeDefined();
+  });
+
   it('GET /api/nonexistent returns standard error envelope (ARCH-15) and no-store header', async () => {
     const response = await request(app.getHttpServer()).get('/api/nonexistent').expect(404);
 

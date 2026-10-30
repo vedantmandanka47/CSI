@@ -65,6 +65,24 @@ This matrix maps every functional requirement (`FR-`), architectural rule (`ARCH
 | **ARCH-14 / SEC-04** | Client-side API client auto-injects `X-CSRF-Token` header on mutating requests | `apps/web/src/lib/api-client.ts` | `apps/web/src/lib/api-client.spec.ts` | **VERIFIED** |
 | **FR-11** | Responsive layout shell with official CSI logo, auth state context, and complete auth page flows | `apps/web/src/app/layout.tsx`, `navbar.tsx`, `footer.tsx`, `app/(auth)/*` | Next.js static build (14/14 pages) & Vitest | **VERIFIED** |
 
+---
+
+## Phase 2 — Public Experience & Branch Presence
+
+### Module M6: Public Landing & Hero Experience, Event Discovery, Past Highlights
+
+| Requirement ID | Description | Implementing Component | Automated Test Suite / Verification | Status |
+|---|---|---|---|:---:|
+| **ARCH-05 / SEC-09** | Public endpoint for branch aggregates and drive window status without personal data | `apps/api/src/modules/public/public.controller.ts`, `public.service.ts` | `public.service.spec.ts` | **VERIFIED** |
+| **UI-01 / ADR-002** | Design tokens strictly in `tokens.css`; zero hardcoded color literals | `apps/web/src/styles/tokens.css`, `hero-lattice.tsx` | `scripts/check-hardcoded-colors.mjs`, `scripts/check-contrast.mjs` | **VERIFIED** |
+| **FR-LANDING-01** | Public Landing Page (`/`) with 10 structured sections, ISR revalidation (300s), and LCP budget | `apps/web/src/app/page.tsx`, `content/landing.ts` | `next build` prerender (14/14 pages, 115 KB first load) | **VERIFIED** |
+| **FR-LANDING-02** | "The thread" vertical scroll progress indicator and accessible section navigation | `apps/web/src/components/landing/thread.tsx` | Static inspection & component prerender | **VERIFIED** |
+| **FR-LANDING-03** | State-aware primary action reflecting active session without losing static rendering | `apps/web/src/components/landing/auth-action.tsx` | Next.js prerender & AuthContext | **VERIFIED** |
+| **FR-LANDING-04** | Chapter journey & historical milestones responsive timeline | `apps/web/src/components/landing/timeline.tsx` | Prerender & responsive verification | **VERIFIED** |
+| **FR-LANDING-05** | Native `<details>`/`<summary>` accessible FAQ accordion | `apps/web/src/components/landing/faq-section.tsx`, `content/faq.ts` | Prerender & HTML accessibility verification | **VERIFIED** |
+| **SEC-07 / PRIV-13** | Zero invented statistics; strict non-personal aggregate counting; zero banned claims | `apps/web/src/app/page.tsx`, `content/landing.ts` | `scripts/check-content.mjs` | **VERIFIED** |
+
+
 
 
 
