@@ -7,14 +7,19 @@ export class PublicService {
   constructor(private readonly prisma: PrismaService) {}
 
   async getStatus(): Promise<PublicStatusResponse> {
-    const activeMembersCount = await this.prisma.user.count({
-      where: { status: 'active' },
-    });
+    const [activeMembersCount, totalEventsCount] = await Promise.all([
+      this.prisma.user.count({
+        where: { status: 'active' },
+      }),
+      this.prisma.event.count({
+        where: { state: { in: ['published', 'registration_open', 'live', 'completed', 'certified'] } },
+      }),
+    ]);
 
     return {
       aggregates: {
         active_members: activeMembersCount,
-        total_events: 0,
+        total_events: totalEventsCount,
         certificates_issued: 0,
       },
       membership_drive: {

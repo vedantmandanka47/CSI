@@ -41,6 +41,10 @@ async function runMigrationTest() {
     'sessions',
     'verification_tokens',
     'password_reset_tokens',
+    'venues',
+    'events',
+    'registrations',
+    'event_guests',
   ];
 
   try {

@@ -5,3 +5,4 @@ export * from './roster.schema.js';
 export * from './auth.schema.js';
 export * from './audit-log.schema.js';
 export * from './public-status.schema.js';
+export * from './event.schema.js';

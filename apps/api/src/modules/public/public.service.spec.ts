@@ -4,12 +4,15 @@ import { PrismaService } from '../../infra/prisma/prisma.service.js';
 
 describe('PublicService', () => {
   let service: PublicService;
-  let prisma: { user: { count: jest.Mock } };
+  let prisma: { user: { count: jest.Mock }; event: { count: jest.Mock } };
 
   beforeEach(async () => {
     prisma = {
       user: {
         count: jest.fn().mockResolvedValue(150),
+      },
+      event: {
+        count: jest.fn().mockResolvedValue(12),
       },
     };
 

@@ -87,3 +87,17 @@ This matrix maps every functional requirement (`FR-`), architectural rule (`ARCH
 
 
 
+
+### Module M7: Event Discovery, Registration & Calendar/ICS Subscriptions
+
+| Requirement ID | Description | Implementing Component | Automated Test Suite / Verification | Status |
+|---|---|---|---|:---:|
+| **FR-EVT-01** | Relational schemas for `venues`, `events`, `registrations`, and `event_guests` with FK indexes and check constraints | `apps/api/prisma/schema.prisma`, `migration.sql` | `test-migration-lifecycle.ts` (UP->DOWN->UP) | **VERIFIED** |
+| **FR-EVT-02** | Public filterable event discovery endpoint (`GET /api/events`) with status, category, date filters, and pagination | `apps/api/src/modules/events/events.service.ts`, `events.controller.ts` | `events.service.spec.ts`, `app.e2e-spec.ts` | **VERIFIED** |
+| **FR-EVT-03** | Public event detail retrieval (`GET /api/events/:slug`) calculating live remaining capacity and user registration status | `apps/api/src/modules/events/events.service.ts` | `events.service.spec.ts` | **VERIFIED** |
+| **INT-05 / SEC-05** | Concurrency-safe event registration using PostgreSQL `SELECT ... FOR UPDATE` row locks; zero overselling | `apps/api/src/modules/events/events.service.ts` | `events.service.spec.ts` (capacity & waitlist assertions) | **VERIFIED** |
+| **PRIV-04 / DPDP** | Guest event registration with mandatory data processing consent and input validation | `apps/api/src/modules/events/events.controller.ts`, `@csi/shared` | `event-schema.spec.ts`, `app.e2e-spec.ts` | **VERIFIED** |
+| **INT-05** | Automatic waitlist promotion upon registration cancellation within atomic transaction | `apps/api/src/modules/events/events.service.ts` | `events.service.spec.ts` | **VERIFIED** |
+| **SEC-22 / RFC-5545** | RFC 5545 iCalendar generation: single event download (`/api/events/:id/ics`) and calendar subscription feeds (`/api/events/calendar.ics`, `/api/calendar/feed.ics`) | `apps/api/src/modules/events/events.service.ts`, `calendar.controller.ts` | `events.service.spec.ts`, `app.e2e-spec.ts` | **VERIFIED** |
+| **UI-EVT-01** | Frontend Event Discovery page (`/events`) with search, category pills, status tabs, empty/loading states | `apps/web/src/app/events/page.tsx`, `event-filters.tsx`, `event-card.tsx` | Next.js build prerender, WCAG contrast scan | **VERIFIED** |
+| **UI-EVT-02** | Frontend Event Detail view (`/events/[slug]`) with full overview, capacity progress, 1-click member register, and guest form | `apps/web/src/app/events/[slug]/page.tsx` | Next.js build compilation, zero hardcoded colors | **VERIFIED** |
