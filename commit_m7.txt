@@ -1,8 +1,0 @@
-feat(m7): implement event discovery, registration, rfc 5545 calendar feeds, and phase documentation
-
-- Database: Add Venue, Event, Registration, and EventGuest models with migration and down rollback
-- Concurrency: Enforce capacity limits with PostgreSQL SELECT ... FOR UPDATE row-level locking
-- Registration: Implement authenticated member 1-click registration, guest flow with DPDP consent, and automatic waitlist promotion
-- Calendar: Implement RFC 5545 iCalendar single event download and subscription feeds (/api/events/calendar.ics, /api/calendar/feed.ics)
-- Frontend: Implement interactive /events discovery page and dynamic /events/[slug] detail route with tokenized light theme
-- Documentation: Add comprehensive Phase Explanation (PE.md) detailing Phase 0 through Phase 5, update STATE.md and TRACEABILITY.md
