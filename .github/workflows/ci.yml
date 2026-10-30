@@ -46,6 +46,9 @@ jobs:
       - name: Check content markers & compliance phrases (PRIV-13)
         run: npm run check:content
 
+      - name: Build shared package declarations (RV-U4-01)
+        run: npm run build --workspace=packages/shared
+
       - name: Lint codebase
         run: npm run lint
 

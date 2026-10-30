@@ -4,6 +4,7 @@ import request from 'supertest';
 import cookieParser from 'cookie-parser';
 import { AppModule } from '../src/app.module.js';
 import { PrismaService } from '../src/infra/prisma/prisma.service.js';
+import { assertStrictTestDatabase } from '../src/common/guards/test-db-guard.js';
 
 describe('Auth & Session Subsystem (E2E) (ARCH-05, ARCH-14, SEC-04, SEC-05, SEC-23)', () => {
   let app: INestApplication;
@@ -20,6 +21,9 @@ describe('Auth & Session Subsystem (E2E) (ARCH-05, ARCH-14, SEC-04, SEC-05, SEC-
     await app.init();
 
     prisma = app.get(PrismaService);
+
+    // Fail-closed verification (U1 / Finding F-01): verify live target is csi_gcet_test before any deletion
+    await assertStrictTestDatabase(prisma);
 
     // Clean test database tables for isolated test run (audit_log is append-only by DB trigger)
     await prisma.session.deleteMany();

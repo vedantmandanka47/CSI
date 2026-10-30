@@ -14,31 +14,42 @@ const apiEnvPath = resolve(join('apps', 'api', '.env'));
 dotenv.config({ path: apiEnvPath });
 
 const migrationUrl = process.env.MIGRATION_DATABASE_URL;
+const databaseUrl = process.env.DATABASE_URL;
 
-if (!migrationUrl) {
-  console.error('[FATAL] MIGRATION_DATABASE_URL is not defined in environment or apps/api/.env');
+if (!migrationUrl || !databaseUrl) {
+  console.error('[FATAL] Both MIGRATION_DATABASE_URL and DATABASE_URL must be defined in environment or apps/api/.env');
   process.exit(1);
 }
 
-// 1. Static URL verification
-let parsedUrl: URL;
-try {
-  parsedUrl = new URL(migrationUrl);
-} catch (err: unknown) {
-  const message = err instanceof Error ? err.message : String(err);
-  console.error('[FATAL] Failed to parse MIGRATION_DATABASE_URL:', message);
-  process.exit(1);
-}
+// 1. Static URL & Host verification for both DDL (migration) and DML/Client (seed) targets (U2 / Finding F-02)
+for (const [name, url] of [
+  ['MIGRATION_DATABASE_URL', migrationUrl],
+  ['DATABASE_URL', databaseUrl],
+]) {
+  let parsedUrl: URL;
+  try {
+    parsedUrl = new URL(url);
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(`[FATAL] Failed to parse ${name}:`, message);
+    process.exit(1);
+  }
 
-const urlDatabaseName = parsedUrl.pathname.replace(/^\//, '');
+  const allowedHosts = ['localhost', '127.0.0.1', '::1'];
+  if (!allowedHosts.includes(parsedUrl.hostname)) {
+    console.error(`[FATAL] ${name} host "${parsedUrl.hostname}" is not local. Remote targets strictly prohibited.`);
+    process.exit(1);
+  }
 
-if (urlDatabaseName !== 'csi_gcet_dev') {
-  console.error('================================================================');
-  console.error(' [REFUSED] SAFETY VIOLATION DETECTED!');
-  console.error(` Target database in URL is "${urlDatabaseName}".`);
-  console.error(' db:reset:dev is STRICTLY restricted to "csi_gcet_dev" only.');
-  console.error('================================================================');
-  process.exit(1);
+  const urlDatabaseName = parsedUrl.pathname.replace(/^\//, '');
+  if (urlDatabaseName !== 'csi_gcet_dev') {
+    console.error('================================================================');
+    console.error(' [REFUSED] SAFETY VIOLATION DETECTED!');
+    console.error(` Target database in ${name} is "${urlDatabaseName}".`);
+    console.error(' db:reset:dev is STRICTLY restricted to "csi_gcet_dev" only.');
+    console.error('================================================================');
+    process.exit(1);
+  }
 }
 
 async function main() {

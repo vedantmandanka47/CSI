@@ -13,6 +13,7 @@ export const UserSummarySchema = z.object({
   id: z.string().uuid(),
   enrollment_no: z.string().nullable(),
   name: z.string().min(1).max(100),
+  full_name: z.string().min(1).max(100).optional(),
   email: z.string().email(),
   phone: z.string().nullable(),
   branch: z.string().nullable(),

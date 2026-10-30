@@ -78,3 +78,4 @@ describe('Web apiClient (ARCH-14, ARCH-15)', () => {
     expect(headers.get('X-CSRF-Token')).toBe('mock-csrf-token-123');
   });
 });
+

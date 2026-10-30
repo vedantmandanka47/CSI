@@ -5,6 +5,7 @@ import cookieParser from 'cookie-parser';
 import { AppModule } from '../src/app.module.js';
 import { PrismaService } from '../src/infra/prisma/prisma.service.js';
 import { hashPassword, generateSecureToken, hashToken } from '../src/common/crypto/tokens.js';
+import { assertStrictTestDatabase } from '../src/common/guards/test-db-guard.js';
 import { RoleCode, UserStatus } from '@csi/shared';
 
 describe('RBAC & Audit Trail Subsystem (E2E) (ARCH-05, ARCH-06, SEC-23)', () => {
@@ -29,6 +30,9 @@ describe('RBAC & Audit Trail Subsystem (E2E) (ARCH-05, ARCH-06, SEC-23)', () => 
     await app.init();
 
     prisma = app.get(PrismaService);
+
+    // Fail-closed verification (U1 / Finding F-01): verify live target is csi_gcet_test before any deletion
+    await assertStrictTestDatabase(prisma);
 
     // Clean session & user tables (audit_log is append-only by DB trigger)
     await prisma.session.deleteMany();

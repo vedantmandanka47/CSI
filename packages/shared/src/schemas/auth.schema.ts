@@ -56,6 +56,7 @@ export const CurrentUserSchema = z.object({
   id: z.string().uuid(),
   email: z.string().email(),
   full_name: z.string(),
+  name: z.string().optional(),
   status: UserStatusSchema,
   enrollment_no: z.string().nullable().optional(),
   avatar_url: z.string().nullable().optional(),
