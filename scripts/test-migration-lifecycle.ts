@@ -46,6 +46,9 @@ async function runMigrationTest() {
     'registrations',
     'event_guests',
     'drive_windows',
+    'attendance_sessions',
+    'attendance_records',
+    'idempotency_keys',
   ];
 
   try {

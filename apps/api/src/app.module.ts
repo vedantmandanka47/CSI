@@ -17,6 +17,8 @@ import { PublicModule } from './modules/public/public.module.js';
 import { EventsModule } from './modules/events/events.module.js';
 import { AdminModule } from './modules/admin/admin.module.js';
 import { IdCardModule } from './modules/id-card/id-card.module.js';
+import { AttendanceModule } from './modules/attendance/attendance.module.js';
+import { DashboardModule } from './modules/dashboard/dashboard.module.js';
 import { PrismaModule } from './infra/prisma/prisma.module.js';
 
 @Module({
@@ -64,6 +66,8 @@ import { PrismaModule } from './infra/prisma/prisma.module.js';
     EventsModule,
     AdminModule,
     IdCardModule,
+    AttendanceModule,
+    DashboardModule,
     PrismaModule,
   ],
   providers: [

@@ -9,3 +9,5 @@ export * from './event.schema.js';
 export * from './drive-window.schema.js';
 export * from './member-application.schema.js';
 export * from './id-card.schema.js';
+export * from './attendance.schema.js';
+export * from './dashboard.schema.js';

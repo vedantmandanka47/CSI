@@ -18,9 +18,20 @@ export function Navbar() {
       user.roles.includes(RoleCode.VP) ||
       user.roles.includes(RoleCode.ADMIN));
 
+  const isVolunteerOrExecutive =
+    user &&
+    (user.roles.includes(RoleCode.PRESIDENT) ||
+      user.roles.includes(RoleCode.VP) ||
+      user.roles.includes(RoleCode.CORE) ||
+      user.roles.includes(RoleCode.SUBCORE) ||
+      user.roles.includes(RoleCode.COMMITTEE) ||
+      user.roles.includes(RoleCode.ADMIN));
+
   const navLinks = [
     { href: '/', label: 'Home' },
     { href: '/events', label: 'Events' },
+    ...(isAuthenticated ? [{ href: '/dashboard', label: 'Dashboard' }] : []),
+    ...(isVolunteerOrExecutive ? [{ href: '/scanner', label: 'Scanner' }] : []),
     { href: '/team', label: 'Team' },
     { href: '/about', label: 'About' },
     { href: '/health', label: 'Status' },

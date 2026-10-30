@@ -30,6 +30,7 @@ export const RegistrationStatus = {
 export type RegistrationStatus = (typeof RegistrationStatus)[keyof typeof RegistrationStatus];
 
 export const AttendanceAudience = {
+  ALL: 'all',
   PARTICIPANTS: 'participants',
   VOLUNTEERS: 'volunteers',
   SUBCORE: 'subcore',

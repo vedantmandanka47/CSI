@@ -1,6 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
+import cookieParser from 'cookie-parser';
 import { AppModule } from '../src/app.module.js';
 
 describe('API Foundation & Health (E2E) (DEP-13, ARCH-05, ARCH-15)', () => {
@@ -13,6 +14,7 @@ describe('API Foundation & Health (E2E) (DEP-13, ARCH-05, ARCH-15)', () => {
 
     app = moduleFixture.createNestApplication();
     app.setGlobalPrefix('api');
+    app.use(cookieParser());
     await app.init();
   });
 
@@ -140,5 +142,51 @@ describe('API Foundation & Health (E2E) (DEP-13, ARCH-05, ARCH-15)', () => {
       .get('/api/admin/members/applications')
       .expect(401);
     expect(resApps.body.error.code).toBe('UNAUTHENTICATED');
+  });
+
+  // M9: Member Self-Service Dashboard & Offline Attendance E2E Tests
+  it('GET /api/me/dashboard requires authentication and returns 401 when unauthenticated', async () => {
+    const response = await request(app.getHttpServer()).get('/api/me/dashboard').expect(401);
+    expect(response.body.error).toBeDefined();
+    expect(response.body.error.code).toBe('UNAUTHENTICATED');
+  });
+
+  it('GET /api/events/:id/attendance-sessions requires authentication and returns 401', async () => {
+    const response = await request(app.getHttpServer())
+      .get('/api/events/00000000-0000-0000-0000-000000000000/attendance-sessions')
+      .expect(401);
+    expect(response.body.error).toBeDefined();
+    expect(response.body.error.code).toBe('UNAUTHENTICATED');
+  });
+
+  it('Attendance check-in endpoints require authentication (RBAC ATTENDANCE_TAKE)', async () => {
+    const dummyCsrf = 'csrf-test-token-value';
+    const qrRes = await request(app.getHttpServer())
+      .post('/api/attendance/check-in/qr')
+      .set('Cookie', [`csi_csrf=${dummyCsrf}`])
+      .set('X-CSRF-Token', dummyCsrf)
+      .send({ session_id: '00000000-0000-0000-0000-000000000000', qr_token: 'dummy' })
+      .expect(401);
+    expect(qrRes.body.error.code).toBe('UNAUTHENTICATED');
+
+    const totpRes = await request(app.getHttpServer())
+      .post('/api/attendance/check-in/totp')
+      .set('Cookie', [`csi_csrf=${dummyCsrf}`])
+      .set('X-CSRF-Token', dummyCsrf)
+      .send({
+        session_id: '00000000-0000-0000-0000-000000000000',
+        totp_code: '123456',
+        member_id: '00000000-0000-0000-0000-000000000001',
+      })
+      .expect(401);
+    expect(totpRes.body.error.code).toBe('UNAUTHENTICATED');
+
+    const syncRes = await request(app.getHttpServer())
+      .post('/api/attendance/sync')
+      .set('Cookie', [`csi_csrf=${dummyCsrf}`])
+      .set('X-CSRF-Token', dummyCsrf)
+      .send({ operations: [] })
+      .expect(401);
+    expect(syncRes.body.error.code).toBe('UNAUTHENTICATED');
   });
 });
