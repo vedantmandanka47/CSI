@@ -13,6 +13,7 @@ import { CommitteesModule } from './modules/committees/committees.module.js';
 import { UsersModule } from './modules/users/users.module.js';
 import { AuthModule } from './modules/auth/auth.module.js';
 import { AuditLogsModule } from './modules/audit-logs/audit-logs.module.js';
+import { PublicModule } from './modules/public/public.module.js';
 import { PrismaModule } from './infra/prisma/prisma.module.js';
 
 @Module({
@@ -56,6 +57,7 @@ import { PrismaModule } from './infra/prisma/prisma.module.js';
     UsersModule,
     AuthModule,
     AuditLogsModule,
+    PublicModule,
     PrismaModule,
   ],
   providers: [

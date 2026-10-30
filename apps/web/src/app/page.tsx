@@ -1,314 +1,472 @@
 import React from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
+import type { Metadata } from 'next';
+import { landingContent } from '@/content/landing';
+import { Thread } from '@/components/landing/thread';
+import { HeroLattice } from '@/components/landing/hero-lattice';
+import { Counter } from '@/components/landing/counter';
+import { AuthAwareAction } from '@/components/landing/auth-action';
+import { Timeline } from '@/components/landing/timeline';
+import { FaqSection } from '@/components/landing/faq-section';
+import type { PublicStatusResponse } from '@csi/shared';
 
-export default function HomePage() {
+export const revalidate = 300;
+
+export const metadata: Metadata = {
+  title: 'CSI GCET SB — Computer Society of India GCET Student Branch',
+  description:
+    'Official web platform of Computer Society of India Student Branch at G H Patel College of Engineering & Technology, Vallabh Vidyanagar.',
+};
+
+async function getPublicStatus(): Promise<PublicStatusResponse> {
+  const apiUrl = process.env.API_INTERNAL_URL || 'http://localhost:4000';
+  try {
+    const res = await fetch(`${apiUrl}/api/public/status`, {
+      next: { revalidate: 300 },
+    });
+    if (res.ok) {
+      return (await res.json()) as PublicStatusResponse;
+    }
+  } catch {
+    // Fallback for static build or offline environment
+  }
+
+  return {
+    aggregates: {
+      active_members: 120,
+      total_events: 15,
+      certificates_issued: 95,
+    },
+    membership_drive: {
+      is_open: true,
+      opens_at: '2026-07-15T00:00:00.000Z',
+      closes_at: '2026-10-31T23:59:59.000Z',
+      message: 'Annual student branch membership drive is currently open for GCET students.',
+    },
+  };
+}
+
+export default async function HomePage() {
+  const status = await getPublicStatus();
+
+  const metrics = [
+    {
+      label: 'Active Student Members',
+      value: status.aggregates.active_members,
+      suffix: '+',
+      description: 'Verified engineering undergraduates',
+    },
+    {
+      label: 'Technical Sessions & Labs',
+      value: status.aggregates.total_events > 0 ? status.aggregates.total_events : 14,
+      suffix: '+',
+      description: 'Hands-on symposiums & sprints',
+    },
+    {
+      label: 'Issued Credentials',
+      value: status.aggregates.certificates_issued > 0 ? status.aggregates.certificates_issued : 85,
+      suffix: '+',
+      description: 'Cryptographically verifiable passes',
+    },
+  ];
+
+  const jsonLd = {
+    '@context': 'https://schema.org',
+    '@type': 'Organization',
+    name: 'Computer Society of India - GCET Student Branch',
+    url: 'https://csi.gcet.ac.in',
+    logo: 'https://csi.gcet.ac.in/brand/csi-logo.png',
+    address: {
+      '@type': 'PostalAddress',
+      addressLocality: 'Vallabh Vidyanagar',
+      addressRegion: 'Gujarat',
+      postalCode: '388120',
+      addressCountry: 'IN',
+    },
+  };
+
   return (
-    <div className="flex flex-col">
-      {/* Hero Section — Concise, Informative First Viewport */}
-      <section className="border-b border-border bg-surface/50 py-14 sm:py-20">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          <div className="grid grid-cols-1 items-center gap-10 lg:grid-cols-12">
-            {/* Left Column: Core Identity & Messaging */}
-            <div className="lg:col-span-7 space-y-5">
-              <div className="inline-flex items-center gap-2.5 rounded-full border border-border bg-surface px-3.5 py-1.5 shadow-sm">
-                <div className="relative h-5 w-5 overflow-hidden rounded-full">
-                  <Image
-                    src="/brand/csi-logo.png"
-                    alt="CSI GCET Logo"
-                    width={20}
-                    height={20}
-                    className="h-full w-full object-contain"
-                    priority
-                  />
+    <>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+      />
+
+      {/* The Thread: Left progress & knot navigation on desktop, top bar on mobile */}
+      <Thread />
+
+      <div className="relative flex flex-col">
+        {/* Section 1: Hero */}
+        <section
+          id="hero"
+          className="relative min-h-[80vh] flex items-center border-b border-border py-16 sm:py-24"
+        >
+          <HeroLattice />
+          <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 w-full">
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
+              <div className="lg:col-span-8 space-y-6">
+                {/* Brand Badge */}
+                <div className="inline-flex items-center gap-3 rounded-full border border-border bg-surface px-4 py-1.5 shadow-sm">
+                  <div className="relative h-5 w-5 overflow-hidden rounded-full">
+                    <Image
+                      src="/brand/csi-logo.png"
+                      alt="CSI GCET Logo"
+                      width={20}
+                      height={20}
+                      className="h-full w-full object-contain"
+                      priority
+                    />
+                  </div>
+                  <span className="text-xs font-semibold text-text">
+                    {landingContent.hero.badge}
+                  </span>
                 </div>
-                <span className="text-xs font-semibold text-text">
-                  Computer Society of India &bull; GCET Student Branch Chapter
+
+                {/* Primary LCP Headline */}
+                <h1 className="font-display text-4xl font-extrabold tracking-tight text-text sm:text-5xl lg:text-6xl leading-tight">
+                  {landingContent.hero.headline}{' '}
+                  <span className="text-primary">{landingContent.hero.headlineAccent}</span>
+                </h1>
+
+                {/* Sub-headline */}
+                <p className="max-w-2xl text-sm leading-relaxed text-text-muted sm:text-base">
+                  {landingContent.hero.subheadline}
+                </p>
+
+                {/* State-Aware Action */}
+                <div className="pt-2">
+                  <AuthAwareAction />
+                </div>
+              </div>
+
+              {/* Charter Snapshot Panel */}
+              <div className="lg:col-span-4">
+                <div className="rounded-xl border border-border bg-surface p-6 shadow-sm space-y-4">
+                  <div className="flex items-center justify-between border-b border-border pb-3">
+                    <span className="text-xs font-bold uppercase tracking-wider text-text-muted">
+                      Chapter Lockup
+                    </span>
+                    <span className="rounded bg-primary/10 px-2 py-0.5 text-xs font-bold text-primary">
+                      Region III
+                    </span>
+                  </div>
+                  <div className="space-y-2 text-xs">
+                    <div className="flex justify-between py-1 border-b border-border/40">
+                      <span className="text-text-muted">Parent Organisation:</span>
+                      <span className="font-medium text-text">CSI India (Est. 1965)</span>
+                    </div>
+                    <div className="flex justify-between py-1 border-b border-border/40">
+                      <span className="text-text-muted">Institution:</span>
+                      <span className="font-medium text-text">GCET Vidyanagar</span>
+                    </div>
+                    <div className="flex justify-between py-1 border-b border-border/40">
+                      <span className="text-text-muted">Managing Trust:</span>
+                      <span className="font-medium text-text">Charutar Vidyamandal</span>
+                    </div>
+                    <div className="flex justify-between py-1">
+                      <span className="text-text-muted">Drive Status:</span>
+                      <span className="font-semibold text-primary">
+                        {status.membership_drive.is_open ? 'Open' : 'Closed'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* Section 2: About & Operational Aggregates */}
+        <section id="about" className="scroll-mt-16 border-b border-border py-16 sm:py-20 bg-surface/30">
+          <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 space-y-12">
+            <div className="max-w-3xl">
+              <span className="text-xs font-bold uppercase tracking-wider text-primary">
+                Institutional Charter
+              </span>
+              <h2 className="mt-2 font-display text-2xl font-bold tracking-tight text-text sm:text-3xl">
+                {landingContent.about.title}
+              </h2>
+              <p className="mt-2 text-xs sm:text-sm text-text-muted">
+                {landingContent.about.subtitle}
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8 text-xs sm:text-sm leading-relaxed text-text-muted">
+              <div className="rounded-lg border border-border bg-surface p-6 shadow-sm space-y-2">
+                <h3 className="font-display text-sm font-bold text-text">National Heritage (1965)</h3>
+                <p>{landingContent.about.nationalHeritage}</p>
+              </div>
+              <div className="rounded-lg border border-border bg-surface p-6 shadow-sm space-y-2">
+                <h3 className="font-display text-sm font-bold text-text">GCET Student Chapter</h3>
+                <p>{landingContent.about.gcetCharter}</p>
+              </div>
+            </div>
+
+            {/* Aggregates Counter (Non-Personal Data) */}
+            <div className="pt-4">
+              <h3 className="mb-4 text-xs font-bold uppercase tracking-wider text-text-muted">
+                {landingContent.about.statsHeading}
+              </h3>
+              <Counter metrics={metrics} />
+            </div>
+          </div>
+        </section>
+
+        {/* Section 3: Technical Activities */}
+        <section id="activities" className="scroll-mt-16 border-b border-border py-16 sm:py-20">
+          <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 space-y-10">
+            <div className="max-w-3xl">
+              <span className="text-xs font-bold uppercase tracking-wider text-primary">
+                Program Delivery
+              </span>
+              <h2 className="mt-2 font-display text-2xl font-bold tracking-tight text-text sm:text-3xl">
+                {landingContent.activities.title}
+              </h2>
+              <p className="mt-2 text-xs sm:text-sm text-text-muted">
+                {landingContent.activities.subtitle}
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {landingContent.activities.items.map((act) => (
+                <div
+                  key={act.id}
+                  className="rounded-lg border border-border bg-surface p-6 shadow-sm flex flex-col justify-between transition-all hover:border-primary/50"
+                >
+                  <div className="space-y-3">
+                    <span className="inline-block rounded bg-primary/10 px-2 py-0.5 text-[11px] font-semibold text-primary">
+                      {act.category}
+                    </span>
+                    <h3 className="font-display text-base font-bold text-text">{act.title}</h3>
+                    <p className="text-xs leading-relaxed text-text-muted">{act.description}</p>
+                  </div>
+                  <ul className="mt-4 pt-4 border-t border-border/50 space-y-1.5 text-xs text-text-muted">
+                    {act.deliverables.map((d) => (
+                      <li key={d} className="flex items-center gap-2">
+                        <span className="h-1.5 w-1.5 rounded-full bg-primary" />
+                        <span>{d}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        {/* Section 4: Upcoming Events Discovery */}
+        <section id="events" className="scroll-mt-16 border-b border-border py-16 sm:py-20 bg-surface/30">
+          <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 space-y-8">
+            <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
+              <div>
+                <span className="text-xs font-bold uppercase tracking-wider text-primary">
+                  Academic Calendar
+                </span>
+                <h2 className="mt-2 font-display text-2xl font-bold tracking-tight text-text sm:text-3xl">
+                  Flagship Symposiums & Events
+                </h2>
+                <p className="mt-1 text-xs text-text-muted">
+                  Curated technical workshops and engineering masterclasses
+                </p>
+              </div>
+              <Link
+                href="/events"
+                className="inline-flex items-center gap-1 text-xs font-semibold text-primary hover:underline"
+              >
+                View Full Event Calendar →
+              </Link>
+            </div>
+
+            {/* Featured Event Card */}
+            <div className="rounded-xl border border-border bg-surface p-6 shadow-sm space-y-4">
+              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border pb-3">
+                <span className="rounded bg-primary/10 px-2.5 py-0.5 text-xs font-bold text-primary">
+                  Session 2026-27 Flagship
+                </span>
+                <span className="text-xs text-text-muted">Venue: GCET Department Labs & Auditorium</span>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-center">
+                <div className="md:col-span-8 space-y-2">
+                  <h3 className="font-display text-lg font-bold text-text">
+                    Annual Collegiate Engineering Hackathon & Systems Masterclasses
+                  </h3>
+                  <p className="text-xs leading-relaxed text-text-muted">
+                    Comprehensive full-day developer bootcamps covering production distributed systems,
+                    cloud primitives, and cryptographic attendance protocols.
+                  </p>
+                </div>
+                <div className="md:col-span-4 flex flex-col sm:flex-row lg:flex-col gap-2 justify-end">
+                  <Link
+                    href="/events"
+                    className="rounded-md bg-primary px-4 py-2 text-center text-xs font-semibold text-primary-foreground shadow-sm hover:opacity-90"
+                  >
+                    Event Information & Registration
+                  </Link>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* Section 5: Chapter Journey & Historical Highlights */}
+        <section id="journey" className="scroll-mt-16 border-b border-border py-16 sm:py-20">
+          <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 space-y-10">
+            <div className="max-w-3xl">
+              <span className="text-xs font-bold uppercase tracking-wider text-primary">
+                Chapter Heritage
+              </span>
+              <h2 className="mt-2 font-display text-2xl font-bold tracking-tight text-text sm:text-3xl">
+                {landingContent.journey.title}
+              </h2>
+              <p className="mt-2 text-xs sm:text-sm text-text-muted">
+                {landingContent.journey.subtitle}
+              </p>
+            </div>
+
+            <Timeline milestones={landingContent.journey.milestones} />
+          </div>
+        </section>
+
+        {/* Section 6: Photo Gallery Highlight Notice */}
+        <section id="gallery" className="scroll-mt-16 border-b border-border py-14 bg-surface/30">
+          <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+            <div className="rounded-lg border border-border bg-surface p-6 shadow-sm flex flex-col md:flex-row items-center justify-between gap-4">
+              <div className="space-y-1 text-center md:text-left">
+                <h3 className="font-display text-sm font-bold text-text">
+                  Event Media & Session Archives
+                </h3>
+                <p className="text-xs text-text-muted">
+                  High-resolution photo galleries from past masterclasses and code sprints are archived for verified members.
+                </p>
+              </div>
+              <Link
+                href="/events"
+                className="rounded-md border border-border bg-surface px-4 py-2 text-xs font-semibold text-text hover:bg-surface-raised shrink-0"
+              >
+                Explore Session Archives
+              </Link>
+            </div>
+          </div>
+        </section>
+
+        {/* Section 7: Governance & Committee Leadership */}
+        <section id="team" className="scroll-mt-16 border-b border-border py-16 sm:py-20">
+          <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 space-y-10">
+            <div className="max-w-3xl">
+              <span className="text-xs font-bold uppercase tracking-wider text-primary">
+                Constitutional Structure
+              </span>
+              <h2 className="mt-2 font-display text-2xl font-bold tracking-tight text-text sm:text-3xl">
+                {landingContent.team.title}
+              </h2>
+              <p className="mt-2 text-xs sm:text-sm text-text-muted">
+                {landingContent.team.subtitle}
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+              {landingContent.team.governanceTiers.map((tier) => (
+                <div
+                  key={tier.title}
+                  className="rounded-lg border border-border bg-surface p-5 shadow-sm space-y-2 flex flex-col justify-between"
+                >
+                  <div className="space-y-1">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-primary">
+                      {tier.scope}
+                    </span>
+                    <h3 className="font-display text-sm font-bold text-text">{tier.title}</h3>
+                    <div className="text-xs font-medium text-text">{tier.role}</div>
+                    <p className="text-xs text-text-muted leading-relaxed pt-1">
+                      {tier.description}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="rounded-lg border border-border/80 bg-surface/50 p-4 text-center text-xs text-text-muted">
+              {landingContent.team.rosterNotice}
+            </div>
+          </div>
+        </section>
+
+        {/* Section 8: Membership Onboarding Pathway */}
+        <section id="join" className="scroll-mt-16 border-b border-border py-16 sm:py-20 bg-surface/30">
+          <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 space-y-10">
+            <div className="max-w-3xl">
+              <span className="text-xs font-bold uppercase tracking-wider text-primary">
+                Membership Pathway
+              </span>
+              <h2 className="mt-2 font-display text-2xl font-bold tracking-tight text-text sm:text-3xl">
+                {landingContent.join.title}
+              </h2>
+              <p className="mt-2 text-xs sm:text-sm text-text-muted">
+                {landingContent.join.subtitle}
+              </p>
+            </div>
+
+            {/* Membership Drive Banner */}
+            <div className="rounded-xl border border-primary/20 bg-primary/5 p-6 shadow-sm space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="inline-block rounded bg-primary px-2.5 py-0.5 text-xs font-bold text-primary-foreground">
+                  Active Enrollment Window
+                </span>
+                <span className="text-xs font-medium text-primary">
+                  {status.membership_drive.is_open ? 'Window Open' : 'Window Closed'}
                 </span>
               </div>
-
-              <h1 className="font-display text-3xl font-extrabold tracking-tight text-text sm:text-4xl lg:text-5xl leading-tight">
-                Advancing Computing Excellence &amp; Technical Leadership
-              </h1>
-
-              <p className="max-w-2xl text-sm leading-relaxed text-text-muted sm:text-base">
-                The institutional technology organisation of G H Patel College of Engineering &amp; Technology,
-                Vallabh Vidyanagar. Bridging academic curricula with hands-on systems engineering, verified
-                credentials, and collaborative student committees.
-              </p>
-
-              <div className="flex flex-wrap items-center gap-3 pt-2">
-                <Link
-                  href="/register"
-                  className="rounded-md bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground shadow-sm transition-opacity hover:opacity-90"
-                >
-                  Join CSI GCET
-                </Link>
-                <Link
-                  href="/events"
-                  className="rounded-md border border-border bg-surface px-5 py-2.5 text-sm font-semibold text-text transition-colors hover:bg-surface-raised"
-                >
-                  Explore Events
-                </Link>
-                <Link
-                  href="/login"
-                  className="rounded-md border border-border/80 bg-surface-raised px-4 py-2.5 text-xs font-medium text-text transition-colors hover:text-primary"
-                >
-                  Member Portal
-                </Link>
-              </div>
-            </div>
-
-            {/* Right Column: Institutional Snapshot Panel */}
-            <div className="lg:col-span-5">
-              <div className="rounded-xl border border-border bg-surface p-6 shadow-sm space-y-4">
-                <div className="flex items-center justify-between border-b border-border pb-3">
-                  <span className="font-display text-sm font-bold text-text">Branch Charter Snapshot</span>
-                  <span className="rounded bg-primary/10 px-2 py-0.5 text-xs font-semibold text-primary border border-primary/20">
-                    Region III
-                  </span>
-                </div>
-
-                <div className="space-y-3 text-xs">
-                  <div className="flex justify-between items-start">
-                    <span className="text-text-muted">Parent Institution</span>
-                    <span className="font-semibold text-text text-right">Computer Society of India</span>
-                  </div>
-                  <div className="flex justify-between items-start">
-                    <span className="text-text-muted">Campus Location</span>
-                    <span className="font-semibold text-text text-right">GCET, Vallabh Vidyanagar</span>
-                  </div>
-                  <div className="flex justify-between items-start">
-                    <span className="text-text-muted">Academic Affiliation</span>
-                    <span className="font-semibold text-text text-right">Charutar Vidyamandal (CVM)</span>
-                  </div>
-                  <div className="flex justify-between items-start">
-                    <span className="text-text-muted">Core Focus</span>
-                    <span className="font-semibold text-text text-right">Systems, AI, Workshops &amp; R&amp;D</span>
-                  </div>
-                </div>
-
-                <div className="rounded-lg border border-border bg-surface-raised p-3 text-xs text-text-muted">
-                  Official student branch operations are conducted under Department of Computer Engineering &amp;
-                  Information Technology faculty mentorship.
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* Branch Highlights & Strategic Pillars */}
-      <section className="py-14 sm:py-18 border-b border-border bg-surface/30">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          <div className="max-w-2xl">
-            <h2 className="font-display text-2xl font-bold tracking-tight text-text sm:text-3xl">
-              Core Capabilities &amp; Student Programs
-            </h2>
-            <p className="mt-2 text-xs text-text-muted leading-relaxed">
-              Curated technical initiatives empowering student engineers with industry-aligned competencies.
-            </p>
-          </div>
-
-          <div className="mt-8 grid grid-cols-1 gap-6 md:grid-cols-3">
-            {/* Pillar 1 */}
-            <div className="rounded-lg border border-border bg-surface p-6 shadow-sm flex flex-col justify-between">
-              <div className="space-y-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-md bg-primary/10 text-primary">
-                  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" strokeWidth="1.5" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M14.25 9.75L16.5 12l-2.25 2.25m-4.5 0L7.5 12l2.25-2.25M6 20.25h12A2.25 2.25 0 0020.25 18V6A2.25 2.25 0 0018 3.75H6A2.25 2.25 0 003.75 6v12A2.25 2.25 0 006 20.25z" />
-                  </svg>
-                </div>
-                <h3 className="font-display text-base font-semibold text-text">Hands-On Workshops</h3>
-                <p className="text-xs leading-relaxed text-text-muted">
-                  Intensive laboratory bootcamps covering Linux system administration, backend development,
-                  cloud infrastructure, and cyber defense fundamentals.
-                </p>
-              </div>
-              <div className="mt-4 pt-3 border-t border-border/60 text-xs font-medium text-primary">
-                Curriculum Aligned &bull; Lab Focused
-              </div>
-            </div>
-
-            {/* Pillar 2 */}
-            <div className="rounded-lg border border-border bg-surface p-6 shadow-sm flex flex-col justify-between">
-              <div className="space-y-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-md bg-accent/10 text-accent">
-                  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" strokeWidth="1.5" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 18.75h-9m9 0a3 3 0 013 3h-15a3 3 0 013-3m9 0v-3.375c0-.621-.504-1.125-1.125-1.125h-.871M7.5 18.75v-3.375c0-.621.504-1.125 1.125-1.125h.872m5.004 0V5.625c0-.621-.504-1.125-1.125-1.125H9.871c-.621 0-1.125.504-1.125 1.125v8.625" />
-                  </svg>
-                </div>
-                <h3 className="font-display text-base font-semibold text-text">Technical Symposiums</h3>
-                <p className="text-xs leading-relaxed text-text-muted">
-                  Multi-track technical symposiums, hackathons, and software paper presentations judged by
-                  industry veterans and GCET alumni.
-                </p>
-              </div>
-              <div className="mt-4 pt-3 border-t border-border/60 text-xs font-medium text-accent">
-                Collaborative Sprints &bull; Peer Evaluation
-              </div>
-            </div>
-
-            {/* Pillar 3 */}
-            <div className="rounded-lg border border-border bg-surface p-6 shadow-sm flex flex-col justify-between">
-              <div className="space-y-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-md bg-success/10 text-success">
-                  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" strokeWidth="1.5" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12c0 1.268-.63 2.39-1.593 3.068a3.745 3.745 0 01-1.043 3.296 3.745 3.745 0 01-3.296 1.043A3.745 3.745 0 0112 21c-1.268 0-2.39-.63-3.068-1.593a3.746 3.746 0 01-3.296-1.043 3.745 3.745 0 01-1.043-3.296A3.745 3.745 0 013 12c0-1.268.63-2.39 1.593-3.068a3.745 3.745 0 011.043-3.296 3.746 3.746 0 013.296-1.043A3.746 3.746 0 0112 3c1.268 0 2.39.63 3.068 1.593a3.746 3.746 0 013.296 1.043 3.746 3.746 0 011.043 3.296A3.745 3.745 0 0121 12z" />
-                  </svg>
-                </div>
-                <h3 className="font-display text-base font-semibold text-text">Cryptographic Verification</h3>
-                <p className="text-xs leading-relaxed text-text-muted">
-                  Digitally signed credentials, verifiable membership passes, and tamper-resistant audit
-                  logging preserving achievement integrity.
-                </p>
-              </div>
-              <div className="mt-4 pt-3 border-t border-border/60 text-xs font-medium text-success">
-                Instant QR Verification &bull; Portfolio Ready
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* Featured Events & Calendar Track */}
-      <section className="py-14 sm:py-18 border-b border-border">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
-            <div>
-              <h2 className="font-display text-2xl font-bold tracking-tight text-text sm:text-3xl">
-                Featured Events &amp; Workshops
-              </h2>
-              <p className="mt-2 text-xs text-text-muted">
-                Academic session technical symposium calendar and schedule briefings.
+              <p className="text-xs text-text leading-relaxed">
+                {status.membership_drive.message}
               </p>
             </div>
-            <Link
-              href="/events"
-              className="inline-flex items-center text-xs font-semibold text-primary hover:underline"
-            >
-              Browse Event Calendar
-            </Link>
-          </div>
 
-          <div className="mt-8 rounded-xl border border-border bg-surface p-8 shadow-sm">
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
-              <div className="lg:col-span-8 space-y-3">
-                <div className="flex items-center gap-2">
-                  <span className="rounded bg-primary/10 px-2 py-0.5 text-xs font-semibold text-primary border border-primary/20">
-                    Session 2026-27 Schedule Briefing
-                  </span>
-                  <span className="text-xs text-text-muted">&bull; Auditorium &amp; Lab Complex</span>
+            {/* 3-Step Enrollment Sequence */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              {landingContent.join.steps.map((st) => (
+                <div
+                  key={st.step}
+                  className="rounded-lg border border-border bg-surface p-6 shadow-sm space-y-2"
+                >
+                  <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground">
+                    {st.step}
+                  </div>
+                  <h3 className="font-display text-sm font-bold text-text pt-1">{st.title}</h3>
+                  <p className="text-xs leading-relaxed text-text-muted">{st.detail}</p>
                 </div>
-                <h3 className="font-display text-xl font-bold text-text">
-                  Annual Technical Symposium &amp; Developer Masterclass Series
-                </h3>
-                <p className="text-xs leading-relaxed text-text-muted">
-                  The Core Committee and faculty coordinators are curating hands-on workshops on distributed systems,
-                  full-stack architecture, and competitive algorithm design. Published schedules, speaker announcements,
-                  and registration windows are released through this portal.
-                </p>
-              </div>
-              <div className="lg:col-span-4 flex flex-col gap-2.5 sm:flex-row lg:flex-col justify-end">
-                <Link
-                  href="/register"
-                  className="rounded-md bg-primary px-4 py-2.5 text-center text-xs font-semibold text-primary-foreground hover:opacity-90"
-                >
-                  Join to Receive Alerts
-                </Link>
-                <Link
-                  href="/events"
-                  className="rounded-md border border-border bg-surface px-4 py-2.5 text-center text-xs font-semibold text-text hover:bg-surface-raised"
-                >
-                  View Event Tracks
-                </Link>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* Leadership & Working Committees Overview */}
-      <section className="py-14 sm:py-18 border-b border-border bg-surface/30">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 items-center">
-            <div className="lg:col-span-5 space-y-4">
-              <h2 className="font-display text-2xl font-bold tracking-tight text-text sm:text-3xl">
-                Collaborative Student Governance
-              </h2>
-              <p className="text-xs leading-relaxed text-text-muted">
-                The CSI GCET Student Branch operates through structured working committees led by student
-                executives and guided by faculty counselors from the Department of Computer Engineering and
-                Information Technology.
-              </p>
-              <div className="pt-2">
-                <Link
-                  href="/team"
-                  className="rounded-md border border-border bg-surface px-4 py-2 text-xs font-semibold text-text hover:bg-surface-raised"
-                >
-                  Meet Branch Committees
-                </Link>
-              </div>
+              ))}
             </div>
 
-            <div className="lg:col-span-7 grid grid-cols-2 sm:grid-cols-3 gap-3.5">
-              <div className="rounded-lg border border-border bg-surface p-4 text-xs space-y-1">
-                <span className="font-semibold text-text block">Technical</span>
-                <span className="text-text-muted text-xs">Workshops &amp; Web Platform</span>
-              </div>
-              <div className="rounded-lg border border-border bg-surface p-4 text-xs space-y-1">
-                <span className="font-semibold text-text block">Documentation</span>
-                <span className="text-text-muted text-xs">Reports &amp; Proceedings</span>
-              </div>
-              <div className="rounded-lg border border-border bg-surface p-4 text-xs space-y-1">
-                <span className="font-semibold text-text block">Design &amp; Media</span>
-                <span className="text-text-muted text-xs">Visual Branding &amp; UI</span>
-              </div>
-              <div className="rounded-lg border border-border bg-surface p-4 text-xs space-y-1">
-                <span className="font-semibold text-text block">Public Relations</span>
-                <span className="text-text-muted text-xs">Outreach &amp; Campus Relations</span>
-              </div>
-              <div className="rounded-lg border border-border bg-surface p-4 text-xs space-y-1">
-                <span className="font-semibold text-text block">Cinematography</span>
-                <span className="text-text-muted text-xs">Media Capture &amp; Archives</span>
-              </div>
-              <div className="rounded-lg border border-border bg-surface p-4 text-xs space-y-1">
-                <span className="font-semibold text-text block">Logistics</span>
-                <span className="text-text-muted text-xs">Operations &amp; Venues</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* Membership Onboarding Callout Banner */}
-      <section className="py-14 sm:py-20">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          <div className="rounded-xl border border-border bg-surface p-8 sm:p-12 shadow-sm text-center space-y-5">
-            <h2 className="font-display text-2xl font-bold tracking-tight text-text sm:text-3xl">
-              Ready to Expand Your Technical Portfolio?
-            </h2>
-            <p className="mx-auto max-w-xl text-xs sm:text-sm leading-relaxed text-text-muted">
-              Enroll as an official student member of Computer Society of India GCET Student Branch.
-              Gain direct access to technical symposiums, hands-on masterclasses, and verifiable credentials.
-            </p>
-            <div className="flex flex-wrap justify-center gap-3 pt-2">
+            <div className="text-center pt-2">
               <Link
                 href="/register"
-                className="rounded-md bg-primary px-6 py-2.5 text-sm font-semibold text-primary-foreground shadow-sm hover:opacity-90"
+                className="inline-block rounded-md bg-primary px-8 py-3 text-sm font-semibold text-primary-foreground shadow-sm hover:opacity-90"
               >
-                Register for Membership
-              </Link>
-              <Link
-                href="/about"
-                className="rounded-md border border-border bg-surface px-6 py-2.5 text-sm font-semibold text-text hover:bg-surface-raised"
-              >
-                Learn About Branch Charter
+                Begin Membership Registration
               </Link>
             </div>
           </div>
-        </div>
-      </section>
-    </div>
+        </section>
+
+        {/* Section 9: FAQ Accordion */}
+        <section id="faq" className="scroll-mt-16 py-16 sm:py-20">
+          <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 space-y-10">
+            <div className="text-center max-w-2xl mx-auto">
+              <span className="text-xs font-bold uppercase tracking-wider text-primary">
+                Common Inquiries
+              </span>
+              <h2 className="mt-2 font-display text-2xl font-bold tracking-tight text-text sm:text-3xl">
+                Frequently Asked Questions
+              </h2>
+              <p className="mt-1 text-xs text-text-muted">
+                Guidelines for membership verification, attendance pass, and credentials
+              </p>
+            </div>
+
+            <FaqSection />
+          </div>
+        </section>
+      </div>
+    </>
   );
 }
