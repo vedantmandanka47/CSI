@@ -47,8 +47,8 @@ To maintain brand cohesion, visual harmony, and accessibility compliance (WCAG 2
 2. **Tailwind Mapping:** Tailwind utility classes map directly to CSS custom properties defined in `tokens.css`.
 3. **Strict Prohibition:** No hex (`#fff`), `rgb()`, `rgba()`, `hsl()`, or `hsla()` literals are permitted in `.tsx`, `.ts`, or `.css` files outside `tokens.css`.
 4. **Automated Enforcement:**
-   - `scripts/check-hardcoded-colors.mjs` runs on every CI build and fails if any literal is detected.
-   - `scripts/check-contrast.mjs` runs on every CI build and verifies WCAG 2.2 AA contrast ratios (minimum 4.5:1 for body text, 3.0:1 for graphical UI elements).
+   - `scripts/validation/check-hardcoded-colors.mjs` runs on every CI build and fails if any literal is detected.
+   - `scripts/validation/check-contrast.mjs` runs on every CI build and verifies WCAG 2.2 AA contrast ratios (minimum 4.5:1 for body text, 3.0:1 for graphical UI elements).
 
 ### Consequences
 - Instant theme consistency across light and dark modes.

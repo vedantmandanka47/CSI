@@ -14,8 +14,12 @@ This project is structured as an npm workspaces monorepo:
 │   └── web/          # Next.js 15 App Router frontend (Tailwind CSS, "Indigo Lattice" tokens, Theme provider)
 ├── packages/
 │   └── shared/       # Shared contracts, Zod schemas, Permission matrix, Error envelope schema
+├── tests/            # Centralized test suites (unit, e2e, helpers)
+│   ├── unit/         # Unit test suites (api, web, shared)
+│   ├── e2e/          # API end-to-end integration tests
+│   └── helpers/      # Test helpers and environment bootstrap
 ├── docs/             # Architecture decision records (ADRs), Data inventory, Risk register, Vendors
-└── scripts/          # Root utilities: secrets generator, color/contrast/content scanners, db-reset
+└── scripts/          # Categorized operational scripts (database, development, setup, validation)
 ```
 
 ### Core Architecture Principles

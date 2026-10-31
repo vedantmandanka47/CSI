@@ -15,7 +15,7 @@
     "test": "jest --runInBand",
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
-    "test:e2e": "jest --config ./test/jest-e2e.json --runInBand"
+    "test:e2e": "jest --config ./jest-e2e.json --runInBand"
   },
   "dependencies": {
     "@csi/shared": "*",
@@ -65,18 +65,29 @@
       "json",
       "ts"
     ],
-    "rootDir": "src",
-    "testRegex": ".*\\.spec\\.ts$",
+    "rootDir": "../..",
+    "roots": [
+      "<rootDir>/tests/unit/api",
+      "<rootDir>/apps/api/src"
+    ],
+    "testMatch": [
+      "<rootDir>/tests/unit/api/**/*.spec.ts"
+    ],
     "transform": {
-      "^.+\\.(t|j)s$": "ts-jest"
+      "^.+\\.(t|j)s$": [
+        "ts-jest",
+        {
+          "tsconfig": "<rootDir>/apps/api/tsconfig.json"
+        }
+      ]
     },
     "moduleNameMapper": {
       "^(\\.{1,2}/.*)\\.js$": "$1"
     },
     "collectCoverageFrom": [
-      "**/*.(t|j)s"
+      "apps/api/src/**/*.(t|j)s"
     ],
-    "coverageDirectory": "../coverage",
+    "coverageDirectory": "<rootDir>/coverage/api",
     "testEnvironment": "node"
   }
 }

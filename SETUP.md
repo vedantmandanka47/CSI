@@ -25,7 +25,7 @@ Connect to PostgreSQL as a superuser (`postgres`) and execute the database setup
 
 ```bash
 # In psql:
-psql -U postgres -f scripts/db-setup.sql
+psql -U postgres -f scripts/database/db-setup.sql
 ```
 
 This creates:

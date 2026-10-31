@@ -79,7 +79,7 @@ jobs:
       - name: Migration lifecycle test (INT-11 UP -> DOWN -> UP)
         env:
           MIGRATION_DATABASE_URL: postgresql://csi_migrator:ci_test_migrator_pass@localhost:5432/csi_gcet_test
-        run: npx tsx scripts/test-migration-lifecycle.ts
+        run: npx tsx scripts/database/test-migration-lifecycle.ts
 
       - name: Run unit & integration test suites
         run: npm run test

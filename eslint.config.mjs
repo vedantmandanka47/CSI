@@ -24,7 +24,7 @@ export default tseslint.config(
       '**/storage/**',
       '**/build/**',
       '**/next-env.d.ts',
-      'scripts/db-setup.sql',
+      'scripts/**/*.sql',
     ],
   },
 );

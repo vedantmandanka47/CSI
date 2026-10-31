@@ -1,8 +1,8 @@
 import { Module } from '@nestjs/common';
-import { DrivesController } from './drives.controller.js';
-import { MembersController } from './members.controller.js';
-import { DriveWindowsService } from './drive-windows.service.js';
-import { MemberAdminService } from './member-admin.service.js';
+import { DrivesController } from './drives/drives.controller.js';
+import { MembersController } from './members/members.controller.js';
+import { DriveWindowsService } from './drives/drive-windows.service.js';
+import { MemberAdminService } from './members/member-admin.service.js';
 import { PrismaModule } from '../../infra/prisma/prisma.module.js';
 
 @Module({

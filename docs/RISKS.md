@@ -27,9 +27,9 @@ This document tracks all recognized security, operational, architectural, and da
 
 | Risk ID | Severity | Threat / Scenario | Enforced Mitigation & Engineering Controls | Verification Gate |
 |---|:---:|---|---|---|
-| **RR:VC-01** | **P0** | Schema drift between migrations and database state | Hand-crafted reversible `down.sql` for every migration; mandatory UP $\to$ DOWN $\to$ UP test in CI | `test-migration-lifecycle.ts`; INT-11 |
+| **RR:VC-01** | **P0** | Schema drift between migrations and database state | Hand-crafted reversible `down.sql` for every migration; mandatory UP $\to$ DOWN $\to$ UP test in CI | `scripts/database/test-migration-lifecycle.ts`; INT-11 |
 | **RR:VC-02** | **P1** | Accidental commit of prompt files, instructions, or internal developer briefs | `.gitignore` rule matching `*prompt*.md` and `BUILD_PROMPT.md` strictly enforced | Pre-commit git status verification; Owner directive |
-| **RR:VC-03** | **P1** | Destructive database commands run against wrong environment | `scripts/db-reset-dev.ts` validates `current_database() === 'csi_gcet_dev'` and immediately aborts otherwise | Safety check test; Section 4.4 |
+| **RR:VC-03** | **P1** | Destructive database commands run against wrong environment | `scripts/database/db-reset-dev.ts` validates `current_database() === 'csi_gcet_dev'` and immediately aborts otherwise | Safety check test; Section 4.4 |
 | **RR:VC-04** | **P1** | Untracked configuration differences between development and production | 12-factor configuration; all environment variables documented in committed `.env.example` files | `env.ts` strict Zod schema validation; DEP-10 |
 
 ---
@@ -38,8 +38,8 @@ This document tracks all recognized security, operational, architectural, and da
 
 | Risk ID | Severity | Threat / Scenario | Enforced Mitigation & Engineering Controls | Verification Gate |
 |---|:---:|---|---|---|
-| **RR:UX-01** | **P1** | Low contrast text causing readability barriers for visually impaired students | WCAG 2.2 AA contrast compliance enforced on all token pairings in light and dark themes (minimum 4.5:1 text ratio) | `scripts/check-contrast.mjs`; UI-03 |
-| **RR:UX-02** | **P1** | Visual and layout inconsistency from fragmented ad-hoc colors | Zero color literals outside `tokens.css`; Tailwind mapped exclusively to CSS custom properties | `scripts/check-hardcoded-colors.mjs`; ADR-002 |
+| **RR:UX-01** | **P1** | Low contrast text causing readability barriers for visually impaired students | WCAG 2.2 AA contrast compliance enforced on all token pairings in light and dark themes (minimum 4.5:1 text ratio) | `scripts/validation/check-contrast.mjs`; UI-03 |
+| **RR:UX-02** | **P1** | Visual and layout inconsistency from fragmented ad-hoc colors | Zero color literals outside `tokens.css`; Tailwind mapped exclusively to CSS custom properties | `scripts/validation/check-hardcoded-colors.mjs`; ADR-002 |
 | **RR:UX-03** | **P1** | Vestibular discomfort or distraction from heavy animations | Respect for `prefers-reduced-motion`; app screen transitions $< 200\text{ms}$; only 2 signature motions on landing page | ADR-003; Section 7.7 |
-| **RR:UX-04** | **P1** | Dead links, placeholder copy, or unreplaced templates in production | `scripts/check-content.mjs` scans for `[CONTENT NEEDED]`, lorem ipsum, and `href="#"` placeholders | `npm run check:content`; Section 8.7 |
+| **RR:UX-04** | **P1** | Dead links, placeholder copy, or unreplaced templates in production | `scripts/validation/check-content.mjs` scans for `[CONTENT NEEDED]`, lorem ipsum, and `href="#"` placeholders | `npm run check:content`; Section 8.7 |
 
