@@ -3,6 +3,7 @@ import {
   NotFoundException,
   BadRequestException,
   ForbiddenException,
+  ConflictException,
   Logger,
 } from '@nestjs/common';
 import { Prisma, Certificate as PrismaCertificate } from '@prisma/client';
@@ -17,12 +18,12 @@ import {
   CertificateBatchResponse,
   CertificateQuery,
   CertificateDetail,
-  CertificateTemplateConfig,
   BatchStatus,
   CertificateStatus,
   CertificateType,
   CurrentUser,
   PermissionCode,
+  ErrorCode,
 } from '@csi/shared';
 import { createHash } from 'crypto';
 
@@ -376,7 +377,10 @@ export class CertificateIssuanceService {
     });
 
     if (!certificate) {
-      throw new NotFoundException(`Certificate with ID '${certificateId}' was not found.`);
+      throw new NotFoundException({
+        code: ErrorCode.CERTIFICATE_NOT_FOUND,
+        message: `Certificate with ID '${certificateId}' was not found.`,
+      });
     }
 
     // Authorization check:
@@ -389,51 +393,48 @@ export class CertificateIssuanceService {
           currentUser.email?.toLowerCase() === certificate.recipientEmail.toLowerCase()));
 
     if (!hasGeneratePerm && !isOwner) {
-      throw new ForbiddenException('You are not authorized to download this certificate.');
+      throw new ForbiddenException({
+        code: ErrorCode.FORBIDDEN,
+        message: 'You are not authorized to download this certificate.',
+      });
     }
 
-    // If PDF is already stored on disk, retrieve it
-    if (certificate.storagePath && this.storageService.hasCertificatePdf(certificate.storagePath)) {
-      const pdfBuffer = await this.storageService.getCertificatePdf(certificate.storagePath);
-      const safeRecipient = certificate.recipientName.replace(/[^a-zA-Z0-9_-]/g, '_');
-      return {
-        pdfBuffer,
-        filename: `certificate-${safeRecipient}.pdf`,
-      };
+    // 1. Missing File Detection (AUD-CERT-01): Verify recorded storage path and file presence on disk
+    if (!certificate.storagePath || !this.storageService.hasCertificatePdf(certificate.storagePath)) {
+      this.logger.error(
+        `Issued certificate file is missing from storage for certificate '${certificate.id}'. Automatic regeneration refused to prevent unverifiable replacement.`,
+      );
+      throw new ConflictException({
+        code: ErrorCode.CERTIFICATE_FILE_UNAVAILABLE,
+        message:
+          'The issued certificate file is currently unavailable in storage. Please contact the student branch administrator.',
+      });
     }
 
-    // Fallback: If certificate record is generated but file was moved/ephemeral, regenerate deterministically
-    const templateConfig: CertificateTemplateConfig = certificate.batch?.templateConfig
-      ? (certificate.batch.templateConfig as unknown as CertificateTemplateConfig)
-      : CertificateTemplateEngineService.DEFAULT_CSI_PARTICIPATION_TEMPLATE;
+    // 2. Document Integrity Check: Verify stored file SHA-256 against recorded database hash
+    if (certificate.fileHash) {
+      const integrityOk = await this.storageService.verifyFileIntegrity(
+        certificate.storagePath,
+        certificate.fileHash,
+      );
 
-    const certData = {
-      recipient_name: certificate.recipientName,
-      recipient_id: certificate.recipientId || certificate.id,
-      event_title: certificate.event.title,
-      event_category: certificate.event.category,
-      issue_date: certificate.issueDate,
-      achievement: certificate.achievement || undefined,
-      certificate_number: certificate.certificateNumber,
-      college_name: 'GCET Engineering College',
-      custom_placeholders:
-        typeof certificate.metadata === 'object' && certificate.metadata !== null
-          ? (certificate.metadata as Record<string, string>)
-          : undefined,
-    };
+      if (!integrityOk) {
+        this.logger.warn(
+          `Integrity verification failed on download for certificate '${certificate.id}'`,
+        );
+        throw new ConflictException({
+          code: ErrorCode.CERTIFICATE_INTEGRITY_MISMATCH,
+          message:
+            'Certificate document integrity check failed. The stored file has been modified or corrupted.',
+        });
+      }
+    }
 
-    const rendered = await this.templateEngine.renderCertificate(templateConfig, certData);
-
-    // Save regenerated PDF back to storage
-    await this.storageService.saveCertificatePdf(
-      certificate.id,
-      rendered.pdfBuffer,
-      certificate.batchId || undefined,
-    );
-
+    // 3. Validated Document Retrieval: Read verified buffer from storage jail
+    const pdfBuffer = await this.storageService.getCertificatePdf(certificate.storagePath);
     const safeRecipient = certificate.recipientName.replace(/[^a-zA-Z0-9_-]/g, '_');
     return {
-      pdfBuffer: rendered.pdfBuffer,
+      pdfBuffer,
       filename: `certificate-${safeRecipient}.pdf`,
     };
   }

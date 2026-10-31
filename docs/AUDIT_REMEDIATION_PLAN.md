@@ -19,18 +19,23 @@ This remediation plan organizes the 13 findings identified in the comprehensive 
 
 ## 2. Prioritized Remediation Stages
 
-### Stage 1: Pre-M14 Fixes (Blocking Module M14)
+### Stage 1: Pre-M14 Fixes (Blocking Module M14) — COMPLETED
 
-| Finding ID | Title | Component | Complexity | Risk if Unaddressed |
-|---|---|---|:---:|---|
-| **AUD-CERT-01** | Fix Certificate Fallback Regeneration & Verification Binding | `CertificateIssuanceService.getCertificateDownload` | Low | If an issued certificate file is missing from disk, member self-service download regenerates a PDF that lacks the QR code and permanently fails public verification with `INTEGRITY_MISMATCH`. |
+| Finding ID | Title | Component | Complexity | Status | Resolution |
+|---|---|---|:---:|:---:|---|
+| **AUD-CERT-01** | Fix Certificate Fallback Regeneration & Verification Binding | `CertificateIssuanceService.getCertificateDownload` | Low | **Resolved** | Option A implemented: fail safely on missing/corrupt files with HTTP 409 `CERTIFICATE_FILE_UNAVAILABLE` or `CERTIFICATE_INTEGRITY_MISMATCH`. Zero unverified PDF regeneration. |
 
-#### Implementation Plan for AUD-CERT-01:
-1. **Root Cause Analysis:** `getCertificateDownload()` regenerates the PDF using `certData`, but omits `verification_code` and `verification_url` because only `verificationCodeHash` was stored in the database.
-2. **Remediation Options:**
-   - *Option A (Recommended for Pre-M14):* In `CertificateStorageService.saveCertificatePdf()`, ensure certificates are persisted reliably to non-volatile storage. If `storagePath` exists in the database, verify that the file exists before attempting download. If the file is missing from disk, rather than rendering an incomplete PDF that breaks the cryptographic integrity hash, return an explicit error (HTTP 404 or 409 `CERTIFICATE_FILE_UNAVAILABLE`) alerting administrators to re-issue or restore from backup.
-   - *Option B (Full Cryptographic Regeneration):* Store the encrypted raw verification code in `Certificate.metadata` (encrypted with `APP_ENCRYPTION_KEY`). On fallback regeneration, decrypt the verification code, render the exact QR badge, and update `Certificate.fileHash` transactionally with an audit log record.
-3. **Verification Gate:** Test that regenerating or downloading an issued certificate with a missing disk file never outputs a certificate that fails public verification.
+#### Implementation & Verification for AUD-CERT-01:
+1. **Root Cause Analysis:** `getCertificateDownload()` regenerated the PDF using `certData`, but omitted `verification_code` and `verification_url` because only `verificationCodeHash` was stored in the database. The regenerated PDF had a divergent SHA-256 hash and broke public verification.
+2. **Remediation Strategy:** Implemented Option A (Fail Safely When an Issued Certificate File Is Missing).
+   - Removed unsafe automatic regeneration fallback.
+   - Missing disk files trigger HTTP 409 Conflict with standard error code `CERTIFICATE_FILE_UNAVAILABLE`.
+   - Files with checksum mismatches trigger HTTP 409 Conflict with standard error code `CERTIFICATE_INTEGRITY_MISMATCH`.
+   - Preserved authorization checks prior to filesystem checks.
+   - Preserved HTTP 404 Not Found for nonexistent certificates.
+   - Added standard error codes to `@csi/shared`.
+   - Logging audited: no student PII or internal server filesystem paths exposed.
+3. **Verification Gate Passed:** Verified via unit tests (`certificate-batch.service.spec.ts`) and E2E tests (`certificate-batch.e2e-spec.ts`). Full test suites pass cleanly (284 unit tests, 77 E2E tests). Pre-M14 gate satisfied.
 
 ---
 

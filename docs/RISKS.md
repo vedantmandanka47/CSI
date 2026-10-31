@@ -20,6 +20,7 @@ This document tracks all recognized security, operational, architectural, and da
 | **RR:SEC-10** | **P1** | Third-party dependency vulnerability exploitation | `npm audit --omit=dev` in CI; action commit SHAs pinned (DEP-09); strict package version saving (`save-exact=true`) | `audit:deps`; DEP-04 to DEP-09 |
 | **RR:SEC-11** | **P1** | Log data leaks exposing student PII or session tokens | Automatic pino redaction for `password`, `token`, `cookie`, `authorization`, `phone`, `email` | Pino redaction unit tests; SEC-24 |
 | **RR:SEC-12** | **P1** | False claims of legal or regulatory compliance | Prohibition of unsupported claims ("DPDP compliant", "fully secure", "unhackable") | `check:content` scanner; PRIV-13 |
+| **RR:SEC-13** | **P1** | Issuance or download of corrupted, tampered, or unverifiable certificates | Fail-safe handling on missing or corrupt files (AUD-CERT-01); strict SHA-256 integrity verification against database hash; zero unverified dynamic PDF regeneration; HTTP 409 Conflict with sanitized logging | `certificate-batch.service.spec.ts`, `certificate-batch.e2e-spec.ts` |
 
 ---
 

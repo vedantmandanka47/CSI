@@ -1,5 +1,10 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
+import {
+  NotFoundException,
+  BadRequestException,
+  ForbiddenException,
+  ConflictException,
+} from '@nestjs/common';
 import { PrismaService } from '../../../../../apps/api/src/infra/prisma/prisma.service.js';
 import {
   ParticipantResolverService,
@@ -16,6 +21,7 @@ import {
   CertificateStatus,
   CurrentUser,
   PermissionCode,
+  ErrorCode,
 } from '@csi/shared';
 
 describe('Certificate Batch Subsystem (M12 Unit Tests)', () => {
@@ -420,6 +426,130 @@ describe('Certificate Batch Subsystem (M12 Unit Tests)', () => {
         permissions: [],
       };
 
+      await expect(
+        issuanceService.getCertificateDownload(certId, intruderUser),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('should throw ConflictException (CERTIFICATE_FILE_UNAVAILABLE) when PDF file is missing from storage', async () => {
+      const certId = 'c0eebc99-9c0b-4ef8-bb6d-6bb9bd380a33';
+      const mockCert = {
+        id: certId,
+        recipientId: 'recipient-user-id',
+        recipientEmail: 'ananya@gcet.ac.in',
+        recipientName: 'Ananya Sharma',
+        storagePath: 'direct/cert-test.pdf',
+        fileHash: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
+        event: { title: 'Workshop', category: 'workshop' },
+        batch: null,
+      };
+
+      mockPrisma.certificate.findUnique.mockResolvedValue(mockCert);
+      jest.spyOn(storage, 'hasCertificatePdf').mockReturnValue(false);
+
+      const adminUser: CurrentUser = {
+        id: 'admin-id',
+        full_name: 'Admin User',
+        email: 'admin@gcet.ac.in',
+        status: 'active',
+        roles: ['admin'],
+        permissions: [PermissionCode.CERT_GENERATE],
+      };
+
+      try {
+        await issuanceService.getCertificateDownload(certId, adminUser);
+        fail('Expected ConflictException but none was thrown');
+      } catch (err) {
+        expect(err).toBeInstanceOf(ConflictException);
+        const res = (err as ConflictException).getResponse() as Record<string, unknown>;
+        expect(res.code).toBe(ErrorCode.CERTIFICATE_FILE_UNAVAILABLE);
+      }
+
+      // Verify NO automatic regeneration was attempted (AUD-CERT-01 fix)
+      expect(mockTemplateEngine.renderCertificate).not.toHaveBeenCalled();
+      // Verify database record was NOT mutated (fileHash remains unchanged)
+      expect(mockPrisma.certificate.update).not.toHaveBeenCalled();
+    });
+
+    it('should throw ConflictException (CERTIFICATE_INTEGRITY_MISMATCH) when stored PDF fails hash check', async () => {
+      const certId = 'c0eebc99-9c0b-4ef8-bb6d-6bb9bd380a33';
+      const mockCert = {
+        id: certId,
+        recipientId: 'recipient-user-id',
+        recipientEmail: 'ananya@gcet.ac.in',
+        recipientName: 'Ananya Sharma',
+        storagePath: 'direct/cert-test.pdf',
+        fileHash: 'expected-database-hash-12345',
+        event: { title: 'Workshop', category: 'workshop' },
+        batch: null,
+      };
+
+      mockPrisma.certificate.findUnique.mockResolvedValue(mockCert);
+      jest.spyOn(storage, 'hasCertificatePdf').mockReturnValue(true);
+      jest.spyOn(storage, 'verifyFileIntegrity').mockResolvedValue(false); // Tampered file!
+
+      const adminUser: CurrentUser = {
+        id: 'admin-id',
+        full_name: 'Admin User',
+        email: 'admin@gcet.ac.in',
+        status: 'active',
+        roles: ['admin'],
+        permissions: [PermissionCode.CERT_GENERATE],
+      };
+
+      try {
+        await issuanceService.getCertificateDownload(certId, adminUser);
+        fail('Expected ConflictException but none was thrown');
+      } catch (err) {
+        expect(err).toBeInstanceOf(ConflictException);
+        const res = (err as ConflictException).getResponse() as Record<string, unknown>;
+        expect(res.code).toBe(ErrorCode.CERTIFICATE_INTEGRITY_MISMATCH);
+      }
+    });
+
+    it('should throw NotFoundException when certificate does not exist', async () => {
+      mockPrisma.certificate.findUnique.mockResolvedValue(null);
+
+      const adminUser: CurrentUser = {
+        id: 'admin-id',
+        full_name: 'Admin User',
+        email: 'admin@gcet.ac.in',
+        status: 'active',
+        roles: ['admin'],
+        permissions: [PermissionCode.CERT_GENERATE],
+      };
+
+      await expect(
+        issuanceService.getCertificateDownload('non-existent-cert-id', adminUser),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('should strictly deny unauthorized user even if the certificate file is missing', async () => {
+      const certId = 'c0eebc99-9c0b-4ef8-bb6d-6bb9bd380a33';
+      const mockCert = {
+        id: certId,
+        recipientId: 'recipient-user-id',
+        recipientEmail: 'ananya@gcet.ac.in',
+        recipientName: 'Ananya Sharma',
+        storagePath: 'direct/cert-test.pdf',
+        event: { title: 'Workshop', category: 'workshop' },
+        batch: null,
+      };
+
+      mockPrisma.certificate.findUnique.mockResolvedValue(mockCert);
+      // File is missing from disk
+      jest.spyOn(storage, 'hasCertificatePdf').mockReturnValue(false);
+
+      const intruderUser: CurrentUser = {
+        id: 'intruder-id',
+        full_name: 'Intruder User',
+        email: 'intruder@gcet.ac.in',
+        status: 'active',
+        roles: ['member'],
+        permissions: [],
+      };
+
+      // Must fail with ForbiddenException (403), NOT ConflictException (409)
       await expect(
         issuanceService.getCertificateDownload(certId, intruderUser),
       ).rejects.toThrow(ForbiddenException);

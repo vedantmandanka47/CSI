@@ -425,5 +425,85 @@ describe('Certificate Batch & Idempotency Subsystem (E2E) (M12)', () => {
       expect(Array.isArray(res.body)).toBe(true);
       expect(res.body.length).toBe(0);
     });
+
+    it('returns 409 CERTIFICATE_FILE_UNAVAILABLE when issued certificate PDF file is missing from storage (AUD-CERT-01)', async () => {
+      const missingCert = await prisma.certificate.create({
+        data: {
+          eventId: testEventId,
+          recipientEmail: 'missing-file-student@gcet.ac.in',
+          recipientName: 'Missing File Student',
+          certificateType: 'participation',
+          certificateNumber: 'CSI-2026-TEST-MISSING-001',
+          issueDate: 'November 1, 2026',
+          status: 'generated',
+          storagePath: 'batches/non-existent-batch/non-existent-file.pdf',
+          fileHash: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
+        },
+      });
+
+      const res = await request(app.getHttpServer())
+        .get(`/api/certificates/${missingCert.id}/download`)
+        .set('Cookie', [adminSessionCookie])
+        .expect(409);
+
+      expect(res.body.error).toBeDefined();
+      expect(res.body.error.code).toBe('CERTIFICATE_FILE_UNAVAILABLE');
+      expect(res.body.error.message).toContain('unavailable');
+    });
+
+    it('returns 409 CERTIFICATE_INTEGRITY_MISMATCH when stored PDF file does not match recorded database hash', async () => {
+      const existingCert = await prisma.certificate.findUnique({ where: { id: generatedCertId } });
+      const mismatchedCert = await prisma.certificate.create({
+        data: {
+          eventId: testEventId,
+          recipientEmail: 'tampered-student@gcet.ac.in',
+          recipientName: 'Tampered Student',
+          certificateType: 'merit',
+          certificateNumber: 'CSI-2026-TEST-TAMPER-001',
+          issueDate: 'November 1, 2026',
+          status: 'generated',
+          storagePath: existingCert?.storagePath || 'direct/test.pdf',
+          fileHash: '0000000000000000000000000000000000000000000000000000000000000000',
+        },
+      });
+
+      const res = await request(app.getHttpServer())
+        .get(`/api/certificates/${mismatchedCert.id}/download`)
+        .set('Cookie', [adminSessionCookie])
+        .expect(409);
+
+      expect(res.body.error).toBeDefined();
+      expect(res.body.error.code).toBe('CERTIFICATE_INTEGRITY_MISMATCH');
+    });
+
+    it('returns 404 when downloading a nonexistent certificate', async () => {
+      const res = await request(app.getHttpServer())
+        .get('/api/certificates/00000000-0000-0000-0000-000000000000/download')
+        .set('Cookie', [adminSessionCookie])
+        .expect(404);
+
+      expect(res.body.error).toBeDefined();
+      expect(res.body.error.code).toBe('CERTIFICATE_NOT_FOUND');
+    });
+
+    it('returns 403 when unauthorized user attempts to download missing-file certificate', async () => {
+      const missingCert = await prisma.certificate.create({
+        data: {
+          eventId: testEventId,
+          recipientEmail: 'other-missing@gcet.ac.in',
+          recipientName: 'Other Student',
+          certificateType: 'participation',
+          certificateNumber: 'CSI-2026-TEST-MISSING-002',
+          issueDate: 'November 1, 2026',
+          status: 'generated',
+          storagePath: 'batches/non-existent-batch/non-existent-file-2.pdf',
+        },
+      });
+
+      await request(app.getHttpServer())
+        .get(`/api/certificates/${missingCert.id}/download`)
+        .set('Cookie', [otherSessionCookie])
+        .expect(403);
+    });
   });
 });

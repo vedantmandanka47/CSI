@@ -12,7 +12,7 @@
 | Finding ID | Severity | Category | Finding Summary | Affected Area / Component | M14 Blocker | Production Blocker | Status |
 |---|:---:|---|---|---|:---:|:---:|:---:|
 | **AUD-SEC-01** | **High** | API Security | Client-Spoofed `X-Forwarded-For` Bypasses Public Verification Rate Limiter | `PublicVerificationRateLimitGuard` & `PublicVerificationController` | No | **Yes** | Confirmed |
-| **AUD-CERT-01** | **High** | Data Integrity | Certificate Fallback Regeneration Omits Verification Code & QR Badge | `CertificateIssuanceService.getCertificateDownload` | **Yes** | **Yes** | Confirmed |
+| **AUD-CERT-01** | **High** | Data Integrity | Certificate Fallback Regeneration Omits Verification Code & QR Badge | `CertificateIssuanceService.getCertificateDownload` | **No** (Resolved) | **No** (Resolved) | **Resolved** |
 | **AUD-CERT-02** | **High** | Concurrency / Logic | Idempotency-Key Replay Fails to Validate Request Hash & Stale Responses | `CertificateIssuanceService.issueBatch` & `IdempotencyKey` | No | **Yes** | Confirmed |
 | **AUD-SEC-02** | **High** | Authorization | Unauthenticated, Un-Rate-Limited Public Endpoint Exposes Student Identity | `IdCardController.verifyQrPass` (`POST /api/id-card/verify`) | No | **Yes** | Confirmed |
 | **AUD-SEC-03** | **Medium** | Cryptography | Digital QR Pass Uses HMAC-SHA256 with Session Secret Instead of Ed25519 | `IdCardService.getIdCard` & `IdCardService.verifyQrPass` | No | **Yes** | Confirmed |
@@ -96,9 +96,17 @@
 - **Impact:**
   Legitimately issued certificates whose files were lost or moved become permanently unverifiable upon regeneration, showing an alarming "Certificate integrity check failed" message to verifiers.
 - **Remediation:**
-  Either store the encrypted verification code in `metadata` (encrypted with `APP_ENCRYPTION_KEY`) so fallback regeneration can reconstruct the exact identical PDF, or explicitly mark regenerated certificates in the database and update `fileHash` transactionally with an audit log record.
-- **M14 Blocker:** Yes (M14 Extracurricular Dossier relies on verifiable credentials).
-- **Production Blocker:** Yes.
+  Either store the encrypted verification code in `metadata` (encrypted with `APP_ENCRYPTION_KEY`) so fallback regeneration can reconstruct the exact identical PDF, or fail safely by refusing automatic regeneration and rejecting downloads of missing or corrupt files with explicit error codes.
+- **Resolution Status:** **Resolved** (Option A: Fail Safely When an Issued Certificate File Is Missing)
+  - Removed dynamic automatic regeneration fallback in `CertificateIssuanceService.getCertificateDownload`.
+  - Missing PDF files reject downloads with HTTP 409 Conflict and standard error code `CERTIFICATE_FILE_UNAVAILABLE`.
+  - PDF files with SHA-256 checksum mismatches reject downloads with HTTP 409 Conflict and standard error code `CERTIFICATE_INTEGRITY_MISMATCH`.
+  - Nonexistent certificates continue returning HTTP 404 Not Found (`CERTIFICATE_NOT_FOUND`).
+  - Strict authorization checks precede file presence checks, preventing probing by unauthorized callers (HTTP 403 Forbidden).
+  - Clean error logging without student PII or internal server filesystem paths.
+  - Verified by 54 unit tests (`certificate-batch.service.spec.ts`) and 33 certificate E2E tests (`certificate-batch.e2e-spec.ts`, `certificate-verification.e2e-spec.ts`).
+- **M14 Blocker:** No (Resolved).
+- **Production Blocker:** No (Resolved).
 
 ---
 
