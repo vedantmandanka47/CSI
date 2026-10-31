@@ -189,3 +189,4 @@ describe('M11 Certificate Template Schemas', () => {
     expect(parsed.template.name).toBe('CSI Official Certificate of Participation');
   });
 });
+

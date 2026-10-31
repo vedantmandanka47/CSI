@@ -25,7 +25,14 @@ describe('Auth & Session Subsystem (E2E) (ARCH-05, ARCH-14, SEC-04, SEC-05, SEC-
     // Fail-closed verification (U1 / Finding F-01): verify live target is csi_gcet_test before any deletion
     await assertStrictTestDatabase(prisma);
 
-    // Clean test database tables for isolated test run (audit_log is append-only by DB trigger)
+    // Clean test database tables in reverse dependency order
+    await prisma.certificate.deleteMany();
+    await prisma.certificateBatch.deleteMany();
+    await prisma.attendanceRecord.deleteMany();
+    await prisma.attendanceSession.deleteMany();
+    await prisma.registration.deleteMany();
+    await prisma.eventGuest.deleteMany();
+    await prisma.event.deleteMany();
     await prisma.session.deleteMany();
     await prisma.verificationToken.deleteMany();
     await prisma.passwordResetToken.deleteMany();

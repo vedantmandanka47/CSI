@@ -244,7 +244,7 @@ Finalize operational resilience, conduct rigorous data protection audits in acco
 | **Phase 2** | **Module M9** | Member Portal | Self-service dashboard, Dynamic check-in sessions, Offline queue | Offline sync reconciliation, TOTP checks | **100% Complete & Verified** |
 | **Phase 2** | **Module M10** | Venue Engine | Facility registry, PostgreSQL GIST exclusion constraint | GIST overlap test (`23P01` conflict code) | **100% Complete & Verified** |
 | **Phase 3** | **Module M11** | Credentials | Pure JS PDF template engine (`pdf-lib`), vector merge engine | PDF render fidelity, fontkit embed test, E2E test | **100% Complete & Verified** |
-| **Phase 3** | **Module M12** | Batch Issuance | Background job processing (pg-boss), Idempotency-Key guard | Idempotency replay test, attendance gate test | Scheduled |
+| **Phase 3** | **Module M12** | Batch Issuance | Background job processing, Idempotency-Key guard, chunk worker | Idempotency replay test, attendance gate test, E2E test | **100% Complete & Verified** |
 | **Phase 3** | **Module M13** | Verification | Public verification portal (`/verify/[code]`), base32 codes | Rate limit test, revocation state test | Scheduled |
 | **Phase 4** | **Module M14** | Dossiers | Verified Student Activity Passport, career dossier PDF export | SHA-256 tamper verification, QR verify test | Scheduled |
 | **Phase 4** | **Module M15** | Workspaces | Committee workspaces, dual-role context switcher | Role scope authorization test | Scheduled |

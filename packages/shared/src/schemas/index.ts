@@ -13,3 +13,4 @@ export * from './attendance.schema.js';
 export * from './dashboard.schema.js';
 export * from './venue.schema.js';
 export * from './certificate-template.schema.js';
+export * from './certificate-batch.schema.js';

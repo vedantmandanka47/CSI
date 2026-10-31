@@ -49,6 +49,8 @@ async function runMigrationTest() {
     'attendance_sessions',
     'attendance_records',
     'idempotency_keys',
+    'certificate_batches',
+    'certificates',
   ];
 
   try {

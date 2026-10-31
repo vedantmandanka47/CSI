@@ -34,7 +34,14 @@ describe('RBAC & Audit Trail Subsystem (E2E) (ARCH-05, ARCH-06, SEC-23)', () => 
     // Fail-closed verification (U1 / Finding F-01): verify live target is csi_gcet_test before any deletion
     await assertStrictTestDatabase(prisma);
 
-    // Clean session & user tables (audit_log is append-only by DB trigger)
+    // Clean tables in reverse dependency order
+    await prisma.certificate.deleteMany();
+    await prisma.certificateBatch.deleteMany();
+    await prisma.attendanceRecord.deleteMany();
+    await prisma.attendanceSession.deleteMany();
+    await prisma.registration.deleteMany();
+    await prisma.eventGuest.deleteMany();
+    await prisma.event.deleteMany();
     await prisma.session.deleteMany();
     await prisma.verificationToken.deleteMany();
     await prisma.passwordResetToken.deleteMany();

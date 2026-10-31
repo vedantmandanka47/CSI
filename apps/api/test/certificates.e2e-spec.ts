@@ -39,7 +39,14 @@ describe('Certificate Template Engine Subsystem (E2E) (M11)', () => {
     // Fail-closed verification: ensure target is strictly csi_gcet_test
     await assertStrictTestDatabase(prisma);
 
-    // Clean session & user tables
+    // Clean tables in reverse dependency order
+    await prisma.certificate.deleteMany();
+    await prisma.certificateBatch.deleteMany();
+    await prisma.attendanceRecord.deleteMany();
+    await prisma.attendanceSession.deleteMany();
+    await prisma.registration.deleteMany();
+    await prisma.eventGuest.deleteMany();
+    await prisma.event.deleteMany();
     await prisma.session.deleteMany();
     await prisma.verificationToken.deleteMany();
     await prisma.passwordResetToken.deleteMany();

@@ -3,26 +3,42 @@ import {
   Get,
   Post,
   Body,
+  Param,
+  Query,
+  Headers,
+  Req,
   Res,
   HttpCode,
   HttpStatus,
   BadRequestException,
 } from '@nestjs/common';
-import type { Response } from 'express';
+import type { Request, Response } from 'express';
 import {
   PermissionCode,
   ValidateTemplateInputSchema,
   RenderCertificateInputSchema,
   CertificateTemplateConfigSchema,
   type CertificateData,
+  CreateCertificateBatchInputSchema,
+  CertificateQuerySchema,
+  RetryBatchInputSchema,
+  CurrentUser,
 } from '@csi/shared';
-import { RequirePermission } from '../../common/decorators/index.js';
+import {
+  RequirePermission,
+  Authenticated,
+  ReqUser,
+} from '../../common/decorators/index.js';
 import { CertificateTemplateEngineService } from './certificate-template-engine.service.js';
+import { CertificateIssuanceService } from './certificate-issuance.service.js';
+import { CertificateBatchProcessorService } from './certificate-batch-processor.service.js';
 
 @Controller('certificates')
 export class CertificatesController {
   constructor(
     private readonly certificateEngine: CertificateTemplateEngineService,
+    private readonly issuanceService: CertificateIssuanceService,
+    private readonly batchProcessor: CertificateBatchProcessorService,
   ) {}
 
   /**
@@ -157,5 +173,139 @@ export class CertificatesController {
     res.setHeader('Content-Disposition', `attachment; filename="certificate-${safeName}.pdf"`);
     res.setHeader('Content-Length', rendered.pdfBuffer.length);
     return res.status(HttpStatus.OK).send(rendered.pdfBuffer);
+  }
+
+  // =========================================================================
+  // M12: Batch Certificate Generation & Idempotency Endpoints
+  // =========================================================================
+
+  /**
+   * Initiates an idempotent batch certificate generation process.
+   */
+  @RequirePermission(PermissionCode.CERT_GENERATE)
+  @Post('batches')
+  async createBatch(
+    @Body() body: unknown,
+    @ReqUser() currentUser: CurrentUser,
+    @Headers('idempotency-key') idempotencyHeader?: string,
+    @Req() req?: Request,
+  ) {
+    const parseResult = CreateCertificateBatchInputSchema.safeParse(body);
+    if (!parseResult.success) {
+      throw new BadRequestException({
+        code: 'VALIDATION_ERROR',
+        message: 'Invalid certificate batch request payload',
+        fields: parseResult.error.flatten().fieldErrors,
+      });
+    }
+
+    const input = parseResult.data;
+    if (idempotencyHeader && !input.idempotencyKey) {
+      input.idempotencyKey = idempotencyHeader.trim();
+    }
+
+    const clientIp = req?.ip || req?.socket?.remoteAddress;
+    return this.issuanceService.createBatch(input, currentUser.id, clientIp);
+  }
+
+  /**
+   * Lists certificate batches with optional event filtering and pagination.
+   */
+  @RequirePermission(PermissionCode.CERT_GENERATE)
+  @Get('batches')
+  async listBatches(
+    @Query('eventId') eventId?: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    const pageNum = page ? parseInt(page, 10) : 1;
+    const limitNum = limit ? parseInt(limit, 10) : 20;
+    return this.issuanceService.listBatches(eventId, pageNum, limitNum);
+  }
+
+  /**
+   * Retrieves status, metrics, and progress for a specific certificate batch.
+   */
+  @RequirePermission(PermissionCode.CERT_GENERATE)
+  @Get('batches/:id')
+  async getBatchDetails(@Param('id') id: string) {
+    return this.issuanceService.getBatchDetails(id);
+  }
+
+  /**
+   * Lists certificates in a given batch.
+   */
+  @RequirePermission(PermissionCode.CERT_GENERATE)
+  @Get('batches/:id/certificates')
+  async listBatchCertificates(
+    @Param('id') id: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    const pageNum = page ? parseInt(page, 10) : 1;
+    const limitNum = limit ? parseInt(limit, 10) : 50;
+    return this.issuanceService.listBatchCertificates(id, pageNum, limitNum);
+  }
+
+  /**
+   * Retries failed certificates within a batch.
+   */
+  @RequirePermission(PermissionCode.CERT_GENERATE)
+  @Post('batches/:id/retry')
+  async retryBatch(
+    @Param('id') id: string,
+    @Body() body: unknown,
+  ) {
+    const parseResult = RetryBatchInputSchema.safeParse(body || {});
+    const maxRetries = parseResult.success ? parseResult.data.maxRetries : 3;
+    return this.batchProcessor.retryBatch(id, maxRetries);
+  }
+
+  /**
+   * Queries generated certificates with pagination and search.
+   */
+  @RequirePermission(PermissionCode.CERT_GENERATE)
+  @Get()
+  async queryCertificates(@Query() rawQuery: Record<string, unknown>) {
+    const parseResult = CertificateQuerySchema.safeParse(rawQuery);
+    if (!parseResult.success) {
+      throw new BadRequestException({
+        code: 'VALIDATION_ERROR',
+        message: 'Invalid certificate query parameters',
+        fields: parseResult.error.flatten().fieldErrors,
+      });
+    }
+
+    return this.issuanceService.queryCertificates(parseResult.data);
+  }
+
+  /**
+   * Downloads an issued certificate PDF with authorization check.
+   */
+  @Authenticated()
+  @Get(':id/download')
+  async downloadCertificate(
+    @Param('id') id: string,
+    @ReqUser() currentUser: CurrentUser,
+    @Res() res: Response,
+  ) {
+    const { pdfBuffer, filename } = await this.issuanceService.getCertificateDownload(
+      id,
+      currentUser,
+    );
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('Content-Length', pdfBuffer.length);
+    return res.status(HttpStatus.OK).send(pdfBuffer);
+  }
+
+  /**
+   * Member self-service endpoint listing authenticated member's issued certificates.
+   */
+  @Authenticated()
+  @Get('my')
+  async getMyCertificates(@ReqUser() currentUser: CurrentUser) {
+    return this.issuanceService.listUserCertificates(currentUser.id, currentUser.email);
   }
 }

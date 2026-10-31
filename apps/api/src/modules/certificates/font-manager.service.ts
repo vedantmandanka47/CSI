@@ -97,3 +97,4 @@ export class FontManagerService {
     return StandardFonts.Helvetica;
   }
 }
+
