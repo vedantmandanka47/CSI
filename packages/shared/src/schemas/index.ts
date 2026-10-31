@@ -12,3 +12,4 @@ export * from './id-card.schema.js';
 export * from './attendance.schema.js';
 export * from './dashboard.schema.js';
 export * from './venue.schema.js';
+export * from './certificate-template.schema.js';

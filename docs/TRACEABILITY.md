@@ -144,4 +144,22 @@ This matrix maps every functional requirement (`FR-`), architectural rule (`ARCH
 | **UI-M10-01** | Campus Venue Registry interface (`/admin/venues`) with building/capacity/AV filters, operational status badges, and modal create/update forms | `apps/web/src/app/admin/venues/page.tsx`, `navbar.tsx` | Next.js build compilation, `check-hardcoded-colors.mjs`, `check-contrast.mjs` | **VERIFIED** |
 | **UI-M10-02** | Live Conflict Detector & Event Booking Terminal (`/admin/venues`) with real-time pass/conflict cards and database-protected reservation submission | `apps/web/src/app/admin/venues/page.tsx` | Next.js build compilation, WCAG 2.2 AA contrast scan | **VERIFIED** |
 
+---
+
+## Phase 3 — Certificates & Verifiable Credentials
+
+### Module M11: Pure JavaScript Certificate Template Engine
+
+| Requirement ID | Description | Implementing Component | Automated Test Suite / Verification | Status |
+|---|---|---|---|:---:|
+| **FR-CERT-01** | Pure JavaScript deterministic vector PDF generation engine using `pdf-lib` and `@pdf-lib/fontkit` (zero headless browser / Puppeteer dependencies) | `apps/api/src/modules/certificates/certificate-template-engine.service.ts` | `certificate-engine.service.spec.ts`, `certificates.e2e-spec.ts` | **VERIFIED** |
+| **FR-CERT-02** | Shared certificate template schema, dimensions in points (72 DPI), borders, typography, image elements, and signatory blocks | `packages/shared/src/schemas/certificate-template.schema.ts` | `certificate-template-schemas.spec.ts` (8/8 tests) | **VERIFIED** |
+| **FR-CERT-03** | Secure asset management with strict path traversal isolation, magic byte format verification (PNG/JPEG), and 5 MB size limit | `apps/api/src/modules/certificates/asset-manager.service.ts` | `certificate-engine.service.spec.ts` | **VERIFIED** |
+| **FR-CERT-04** | Font management supporting standard PDF 14 fonts with styles and TrueType/OpenType fontkit embedding with magic byte verification | `apps/api/src/modules/certificates/font-manager.service.ts` | `certificate-engine.service.spec.ts` | **VERIFIED** |
+| **FR-CERT-05** | Exact text layout engine with bottom-left PDF coordinate calculation, multi-alignment support (left, center, right), and dynamic font auto-downscaling | `apps/api/src/modules/certificates/layout-engine.service.ts` | `certificate-engine.service.spec.ts` | **VERIFIED** |
+| **FR-CERT-06** | Safe dynamic placeholder interpolation (`{{recipient_name}}`, `{{event_title}}`, etc.) without `eval()` or `Function()` | `apps/api/src/modules/certificates/certificate-template-engine.service.ts` | `certificate-engine.service.spec.ts` | **VERIFIED** |
+| **FR-CERT-07** | Built-in official CSI Participation and Merit certificate templates with institutional branding, double border, and corner ornaments | `apps/api/src/modules/certificates/certificate-template-engine.service.ts` | `certificate-engine.service.spec.ts`, `certificates.e2e-spec.ts` | **VERIFIED** |
+| **FR-CERT-08** | Certificate Template API (`GET /api/certificates/templates/default`, `GET /api/certificates/fonts`, `POST /api/certificates/templates/validate`, `POST /api/certificates/preview`, `POST /api/certificates/render`) protected by RBAC (`cert.generate`) | `apps/api/src/modules/certificates/certificates.controller.ts` | `certificates.e2e-spec.ts` (10/10 tests) | **VERIFIED** |
+
+
 
