@@ -13,6 +13,7 @@ import {
 import { FontManagerService } from './font-manager.service.js';
 import { AssetManagerService } from './asset-manager.service.js';
 import { LayoutEngineService } from './layout-engine.service.js';
+import QRCode from 'qrcode';
 
 export interface RenderCertificateResult {
   pdfBuffer: Buffer;
@@ -189,6 +190,12 @@ export class CertificateTemplateEngineService {
         width: 180,
       },
     ],
+    qrCode: {
+      enabled: true,
+      x: 720,
+      y: 45,
+      size: 60,
+    },
   };
 
   /**
@@ -456,7 +463,38 @@ export class CertificateTemplateEngineService {
       }
     }
 
-    // 6. Set PDF Document Metadata
+    // 6. Render Anti-Forgery QR Code (M13)
+    const qrEnabled = template.qrCode ? template.qrCode.enabled !== false : true;
+    if (qrEnabled && data.verification_url) {
+      try {
+        const qrSize = template.qrCode?.size ?? 60;
+        const qrX = template.qrCode?.x ?? (width - qrSize - 40);
+        const qrY = template.qrCode?.y ?? 45;
+
+        const qrPngBuffer = await QRCode.toBuffer(data.verification_url, {
+          errorCorrectionLevel: 'M',
+          margin: 1,
+          width: Math.round(qrSize * 3),
+          color: {
+            dark: '#1E3A8A',
+            light: '#FFFFFF',
+          },
+        });
+
+        const qrImage = await doc.embedPng(qrPngBuffer);
+        page.drawImage(qrImage, {
+          x: qrX,
+          y: qrY,
+          width: qrSize,
+          height: qrSize,
+        });
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
+        this.logger.warn(`Failed to render verification QR code: ${message}`);
+      }
+    }
+
+    // 7. Set PDF Document Metadata
     const docTitle = `${template.name} - ${data.recipient_name}`;
     doc.setTitle(docTitle);
     doc.setAuthor('CSI GCET Student Branch');

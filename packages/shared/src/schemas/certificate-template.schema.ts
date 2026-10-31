@@ -103,6 +103,13 @@ export const SignatoryConfigSchema = z.object({
   width: z.number().positive().min(50).max(400).default(160),
 });
 
+export const QrCodeConfigSchema = z.object({
+  enabled: z.boolean().default(true),
+  x: z.number().finite().default(720),
+  y: z.number().finite().default(45),
+  size: z.number().positive().min(20).max(300).default(60),
+});
+
 export const CertificateTemplateConfigSchema = z.object({
   id: z.string().min(1).max(100),
   name: z.string().min(1).max(150),
@@ -122,6 +129,7 @@ export const CertificateTemplateConfigSchema = z.object({
   textElements: z.array(TextElementConfigSchema).min(1, 'Template must contain at least one text element'),
   imageElements: z.array(ImageElementConfigSchema).default([]),
   signatories: z.array(SignatoryConfigSchema).default([]),
+  qrCode: QrCodeConfigSchema.optional(),
 });
 
 export const CertificateDataSchema = z.object({
@@ -141,6 +149,8 @@ export const CertificateDataSchema = z.object({
     .max(50),
   achievement: z.string().max(200).optional(),
   certificate_number: z.string().max(100).optional(),
+  verification_code: z.string().max(50).optional(),
+  verification_url: z.string().max(500).optional(),
   college_name: z.string().max(150).optional(),
   custom_placeholders: z.record(z.string().min(1).max(50), z.string().max(500)).optional(),
 });
@@ -168,6 +178,7 @@ export type BorderConfig = z.infer<typeof BorderConfigSchema>;
 export type TextElementConfig = z.infer<typeof TextElementConfigSchema>;
 export type ImageElementConfig = z.infer<typeof ImageElementConfigSchema>;
 export type SignatoryConfig = z.infer<typeof SignatoryConfigSchema>;
+export type QrCodeConfig = z.infer<typeof QrCodeConfigSchema>;
 export type CertificateTemplateConfig = z.infer<typeof CertificateTemplateConfigSchema>;
 export type CertificateData = z.infer<typeof CertificateDataSchema>;
 export type RenderCertificateInput = z.infer<typeof RenderCertificateInputSchema>;

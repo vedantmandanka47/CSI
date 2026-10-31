@@ -97,6 +97,19 @@ export class CertificateStorageService {
   }
 
   /**
+   * Verifies that the stored PDF file exists and its SHA-256 hash matches the expected database hash.
+   */
+  async verifyFileIntegrity(storagePath: string, expectedHash: string): Promise<boolean> {
+    try {
+      const buffer = await this.getCertificatePdf(storagePath);
+      const actualHash = createHash('sha256').update(buffer).digest('hex');
+      return actualHash.toLowerCase() === expectedHash.toLowerCase();
+    } catch {
+      return false;
+    }
+  }
+
+  /**
    * Deletes a certificate PDF from storage.
    */
   async deleteCertificatePdf(storagePath: string): Promise<void> {

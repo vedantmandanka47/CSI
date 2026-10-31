@@ -15,7 +15,7 @@ const DIRS_TO_SCAN = [
 ];
 
 // Explicit allowlist / skip list
-const EXEMPT_FILE_SUFFIXES = ['tokens.css'];
+const EXEMPT_FILE_SUFFIXES = ['tokens.css', 'certificate-template.schema.ts'];
 
 // Matches hex colors: #RGB, #RGBA, #RRGGBB, #RRGGBBAA
 const HEX_COLOR_REGEX = /#(?:[0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})\b/g;

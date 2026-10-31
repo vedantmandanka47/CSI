@@ -4,6 +4,7 @@ import { PrismaService } from '../../infra/prisma/prisma.service.js';
 import { ParticipantResolverService } from './participant-resolver.service.js';
 import { CertificateNumberGeneratorService } from './certificate-number-generator.service.js';
 import { CertificateStorageService } from './certificate-storage.service.js';
+import { VerificationCodeService } from './verification-code.service.js';
 import { CertificateBatchProcessorService } from './certificate-batch-processor.service.js';
 import { CertificateIssuanceService } from './certificate-issuance.service.js';
 import { CertificateTemplateEngineService } from './certificate-template-engine.service.js';
@@ -80,6 +81,7 @@ describe('Certificate Batch Subsystem (M12 Unit Tests)', () => {
         ParticipantResolverService,
         CertificateNumberGeneratorService,
         CertificateStorageService,
+        VerificationCodeService,
         CertificateBatchProcessorService,
         CertificateIssuanceService,
         { provide: PrismaService, useValue: mockPrisma },

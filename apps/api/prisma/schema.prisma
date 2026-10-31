@@ -52,6 +52,7 @@ model User {
   markedAttendanceRecords   AttendanceRecord[]   @relation("MarkedAttendanceRecords")
   createdCertificateBatches CertificateBatch[]   @relation("CreatedCertificateBatches")
   certificates              Certificate[]
+  revokedCertificates       Certificate[]        @relation("RevokedCertificates")
 
   @@map("users")
 }
@@ -357,6 +358,10 @@ model Certificate {
   fileSizeBytes     Int?              @map("file_size_bytes")
   errorReason       String?           @map("error_reason") @db.Text
   retryCount        Int               @default(0) @map("retry_count")
+  verificationCodeHash String?         @unique @map("verification_code_hash") @db.VarChar(64)
+  revokedAt         DateTime?         @map("revoked_at") @db.Timestamptz(6)
+  revocationReason  String?           @map("revocation_reason") @db.Text
+  revokedById       String?           @map("revoked_by_id") @db.Uuid
   issuedAt          DateTime?         @map("issued_at") @db.Timestamptz(6)
   createdAt         DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt         DateTime          @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
@@ -364,10 +369,13 @@ model Certificate {
   batch             CertificateBatch? @relation(fields: [batchId], references: [id], onDelete: SetNull)
   event             Event             @relation(fields: [eventId], references: [id], onDelete: Cascade)
   recipient         User?             @relation(fields: [recipientId], references: [id], onDelete: SetNull)
+  revokedBy         User?             @relation("RevokedCertificates", fields: [revokedById], references: [id], onDelete: SetNull)
 
   @@unique([eventId, recipientEmail, certificateType], name: "event_email_cert_type_unique")
   @@index([eventId, status])
+  @@index([status])
   @@index([recipientId])
   @@index([batchId, status])
+  @@index([revokedById])
   @@map("certificates")
 }

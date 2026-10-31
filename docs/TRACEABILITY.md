@@ -175,6 +175,20 @@ This matrix maps every functional requirement (`FR-`), architectural rule (`ARCH
 | **FR-BATCH-08** | Authorized certificate downloading (`GET /api/certificates/:id/download`) enforcing strict ownership checks (admin with `cert.generate` or authenticated recipient) and blocking third parties with 403 Forbidden | `apps/api/src/modules/certificates/certificate-issuance.service.ts`, `certificates.controller.ts` | `certificate-batch.service.spec.ts`, `certificate-batch.e2e-spec.ts` | **VERIFIED** |
 | **FR-BATCH-09** | Member self-service credentials listing (`GET /api/me/certificates`, `GET /api/certificates/my`) returning all issued certificates for the authenticated user | `apps/api/src/modules/certificates/me-certificates.controller.ts`, `certificates.controller.ts` | `certificate-batch.e2e-spec.ts` | **VERIFIED** |
 
+### Module M13: Public Verification & Cryptographic Anti-Forgery
+
+| Requirement ID | Description | Implementing Component | Automated Test Suite / Verification | Status |
+|---|---|---|---|:---:|
+| **FR-VERIFY-01** | High-entropy verification code generation (80-bit cryptographic random bytes -> 16-char Crockford Base32) and normalization (uppercase, strip separators, visual aliasing $I, L \to 1$, $O \to 0$) | `apps/api/src/modules/certificates/verification-code.service.ts` | `certificate-verification.service.spec.ts` | **VERIFIED** |
+| **FR-VERIFY-02** | Anti-forgery database-level cryptographic binding storing deterministic SHA-256 hash (`verification_code_hash VARCHAR(64) UNIQUE`) preventing code leaks from database snapshots | `apps/api/prisma/schema.prisma`, `migration.sql` | `scripts/test-migration-lifecycle.ts` (UP->DOWN->UP) | **VERIFIED** |
+| **FR-VERIFY-03** | Public verification endpoints (`GET /api/verify/:code`, `GET /api/certificates/verify/:code`) with privacy-preserving response schemas (never exposing email, phone, enrollment no, or internal IDs) | `apps/api/src/modules/certificates/public-verification.controller.ts`, `certificate-verification.service.ts` | `certificate-verification.service.spec.ts`, `certificate-verification.e2e-spec.ts` | **VERIFIED** |
+| **FR-VERIFY-04** | Pure JavaScript QR code generation (`qrcode`) embedding high-resolution PNG verification badge into issued PDF certificates positioned cleanly within page borders | `apps/api/src/modules/certificates/certificate-template-engine.service.ts`, `certificate-batch-processor.service.ts` | `certificate-engine.service.spec.ts`, `certificate-verification.e2e-spec.ts` | **VERIFIED** |
+| **FR-VERIFY-05** | On-demand SHA-256 PDF integrity verification (`storageService.verifyFileIntegrity`) detecting file tampering or bit-rot, returning `integrity_mismatch` outcome | `apps/api/src/modules/certificates/certificate-storage.service.ts`, `certificate-verification.service.ts` | `certificate-verification.service.spec.ts`, `certificate-verification.e2e-spec.ts` | **VERIFIED** |
+| **FR-VERIFY-06** | Administrative certificate revocation (`POST /api/certificates/:id/revoke`) requiring `cert.generate` permission, mandatory reason, timestamp, and immutable audit logging (`certificate.revoked`) | `apps/api/src/modules/certificates/public-verification.controller.ts`, `certificate-verification.service.ts` | `certificate-verification.service.spec.ts`, `certificate-verification.e2e-spec.ts` | **VERIFIED** |
+| **FR-VERIFY-07** | Sliding-window IP rate limiting guard (`PublicVerificationRateLimitGuard`) enforcing 30 req/min per IP with standard `X-RateLimit-*` and `Retry-After: 60` headers on public endpoints | `apps/api/src/modules/certificates/public-verification-rate-limit.guard.ts` | `certificate-verification.e2e-spec.ts` | **VERIFIED** |
+| **UI-M13-01** | Frontend Public Verification Portal (`/verify` and `/verify/[code]`) with Crockford Base32 formatting, instant client-side validation, multi-state status cards (`valid`, `revoked`, `integrity_mismatch`, `not_found`), full Indigo Lattice tokens, and WCAG AA compliance | `apps/web/src/app/verify/page.tsx`, `apps/web/src/app/verify/[code]/page.tsx` | Next.js build compilation, `check-hardcoded-colors.mjs`, `check-contrast.mjs` | **VERIFIED** |
+
+
 
 
 

@@ -58,3 +58,4 @@ CREATE TABLE IF NOT EXISTS "certificates" (
 CREATE INDEX IF NOT EXISTS "certificates_event_id_status_idx" ON "certificates"("event_id", "status");
 CREATE INDEX IF NOT EXISTS "certificates_recipient_id_idx" ON "certificates"("recipient_id");
 CREATE INDEX IF NOT EXISTS "certificates_batch_id_status_idx" ON "certificates"("batch_id", "status");
+

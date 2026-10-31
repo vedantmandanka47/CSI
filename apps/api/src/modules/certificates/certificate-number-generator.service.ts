@@ -30,3 +30,4 @@ export class CertificateNumberGeneratorService {
     return `CSI-${year}-${cleanSlug}-${typeAbbr}-${hash}`;
   }
 }
+

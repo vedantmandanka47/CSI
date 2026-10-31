@@ -16,3 +16,4 @@ export class MeCertificatesController {
     return this.issuanceService.listUserCertificates(currentUser.id, currentUser.email);
   }
 }
+

@@ -2,6 +2,7 @@ import { Injectable, Logger, NotFoundException, BadRequestException } from '@nes
 import { PrismaService } from '../../infra/prisma/prisma.service.js';
 import { CertificateTemplateEngineService } from './certificate-template-engine.service.js';
 import { CertificateStorageService } from './certificate-storage.service.js';
+import { VerificationCodeService } from './verification-code.service.js';
 import {
   CertificateTemplateConfig,
   CertificateData,
@@ -14,12 +15,13 @@ import {
 export class CertificateBatchProcessorService {
   private readonly logger = new Logger(CertificateBatchProcessorService.name);
   private readonly chunkSize = 10;
-  private readonly activeWorkers = new Set<string>();
+  private readonly activeWorkers = new Map<string, Promise<void>>();
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly templateEngine: CertificateTemplateEngineService,
     private readonly storageService: CertificateStorageService,
+    private readonly verificationCodeService: VerificationCodeService,
   ) {}
 
   /**
@@ -38,15 +40,29 @@ export class CertificateBatchProcessorService {
 
   /**
    * Executes batch certificate generation in memory-bounded chunks with failure isolation.
+   * If an active worker is already running for the batch, returns the active worker promise.
    */
   async processBatch(batchId: string): Promise<void> {
-    if (this.activeWorkers.has(batchId)) {
-      this.logger.warn(`Batch '${batchId}' is already being processed by another worker.`);
-      return;
+    const existing = this.activeWorkers.get(batchId);
+    if (existing) {
+      this.logger.log(`Batch '${batchId}' is already being processed. Awaiting active worker.`);
+      return existing;
     }
 
-    this.activeWorkers.add(batchId);
+    const workerPromise = this.executeBatch(batchId);
+    this.activeWorkers.set(batchId, workerPromise);
 
+    try {
+      await workerPromise;
+    } finally {
+      this.activeWorkers.delete(batchId);
+    }
+  }
+
+  /**
+   * Internal execution logic for chunked certificate processing.
+   */
+  private async executeBatch(batchId: string): Promise<void> {
     try {
       // 1. Concurrency control: Atomic state transition from 'pending' or 'partially_completed' to 'processing'
       const updated = await this.prisma.certificateBatch.updateMany({
@@ -97,6 +113,15 @@ export class CertificateBatchProcessorService {
               data: { status: CertificateStatus.PROCESSING },
             });
 
+            // Generate high-entropy Crockford Base32 verification code (M13)
+            const rawVerificationCode = this.verificationCodeService.generateVerificationCode();
+            const formattedVerificationCode =
+              this.verificationCodeService.formatVerificationCode(rawVerificationCode);
+            const verificationCodeHash =
+              this.verificationCodeService.hashVerificationCode(rawVerificationCode);
+            const verificationUrl =
+              this.verificationCodeService.buildVerificationUrl(formattedVerificationCode);
+
             const certData: CertificateData = {
               recipient_name: cert.recipientName,
               recipient_id: cert.recipientId || cert.id,
@@ -105,6 +130,8 @@ export class CertificateBatchProcessorService {
               issue_date: cert.issueDate,
               achievement: cert.achievement || undefined,
               certificate_number: cert.certificateNumber,
+              verification_code: formattedVerificationCode,
+              verification_url: verificationUrl,
               college_name: 'GCET Engineering College',
               custom_placeholders:
                 typeof cert.metadata === 'object' && cert.metadata !== null
@@ -125,11 +152,12 @@ export class CertificateBatchProcessorService {
               batchId,
             );
 
-            // Mark certificate generated
+            // Mark certificate generated with anti-forgery verification hash
             await this.prisma.certificate.update({
               where: { id: cert.id },
               data: {
                 status: CertificateStatus.GENERATED,
+                verificationCodeHash,
                 storagePath: savedFile.storagePath,
                 fileHash: savedFile.fileHash,
                 fileSizeBytes: savedFile.fileSizeBytes,
@@ -302,3 +330,4 @@ export class CertificateBatchProcessorService {
     };
   }
 }
+

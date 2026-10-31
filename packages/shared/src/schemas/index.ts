@@ -14,3 +14,4 @@ export * from './dashboard.schema.js';
 export * from './venue.schema.js';
 export * from './certificate-template.schema.js';
 export * from './certificate-batch.schema.js';
+export * from './certificate-verification.schema.js';
