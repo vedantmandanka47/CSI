@@ -22,6 +22,13 @@ This document registers every personal data field stored, processed, or transmit
 | `passports.verification_code_hash` | SHA-256 hash of Crockford Base32 verification code | Cryptographic anti-forgery validation | Retained with passport record | Application internal only (never exposed) |
 | `passports.summary_json` | Immutable JSON snapshot containing aggregate metrics (`counts`) and itemized activity records (`activities`: id, type, title, category, date, verificationStatus) frozen at the time of export | Verifiable record of extracurricular contributions | Retained with passport record | Self, Admin, Public Verification (counts and non-sensitive fields only) |
 | `passports.file_hash` | Cryptographic SHA-256 checksum of generated PDF | Tamper detection and dossier integrity verification | Retained with passport record | Application internal only |
+| `tasks.assigned_to_id` | Member ID assigned to committee operational task | Operational task management & responsibility | Active committee term + 1 rollover year | Self, Committee, Executive leadership |
+| `tasks.created_by_id` | Member ID who authored the task | Auditability and task ownership | Active committee term + 1 rollover year | Self, Committee, Executive leadership |
+| `checklist_items.completed_by_id` | Member ID who checked off a pre-event task | Operational accountability and drill execution | Active academic term + 1 rollover year | Self, Committee, Executive leadership |
+| `checklist_runs.signed_off_by_id` | Committee lead or executive who verified the run | Verified leadership sign-off & accountability | Retained with event history (3 years) | Committee, Executive leadership, Admin |
+| `committee_assets.uploaded_by_id` | Member ID who uploaded promotional/media asset | Attribution and review workflow | Retained with event history (3 years) | Committee, Executive leadership, Admin |
+| `committee_assets.reviewed_by_id` | Committee lead or executive who approved/rejected asset | Review accountability and publishing governance | Retained with event history (3 years) | Committee, Executive leadership, Admin |
+| `committee_assets.file_hash` | Cryptographic SHA-256 checksum of media file | Binary tamper detection & storage integrity | Retained with asset record | Application internal only |
 
 ---
 
@@ -44,4 +51,5 @@ In adherence to Hard Rule 20 and PRIV-05, the following data categories are **st
 - **Certificate Verification (PRIV-10):** Public verification pages (`/verify/:id`) display only the certificate recipient's name, event title, and issue date. Private contact details (email, phone, enrollment number) are never exposed on public URLs.
 - **Activity Passport Verification (PRIV-14):** Public passport verification endpoints (`/passports/verify/:code` and `/verify/:code`) display strictly verified participation counts, student full name, passport number, and issuance date. Student contact information (email, phone), institutional enrollment numbers, and internal database/storage paths are redacted and never returned.
 - **Committee Workspace Access Minimization (PRIV-15):** Committee workspaces expose only active member rosters (name, email, role, term) and branch events. Private profile details (phone numbers, passwords, hashes, internal storage paths) are not exposed to committee members. Workspace access events are logged in the append-only `audit_log` (`workspace.accessed`).
+- **Operational Task & Asset Minimization (PRIV-16):** Task descriptions, checklists, and asset metadata are restricted to active committee members and executive leadership. Files uploaded to the media repository are sanitized, path-jailed on disk, and verified via SHA-256 without exposing underlying host directory layouts to clients. All modifications are tracked in the append-only `audit_log`.
 

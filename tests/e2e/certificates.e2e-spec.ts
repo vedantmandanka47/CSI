@@ -40,6 +40,12 @@ describe('Certificate Template Engine Subsystem (E2E) (M11)', () => {
     await assertStrictTestDatabase(prisma);
 
     // Clean tables in reverse dependency order
+    await prisma.committeeAsset.deleteMany();
+    await prisma.checklistRun.deleteMany();
+    await prisma.checklistItem.deleteMany();
+    await prisma.checklist.deleteMany();
+    await prisma.task.deleteMany();
+    await prisma.passport.deleteMany();
     await prisma.certificate.deleteMany();
     await prisma.certificateBatch.deleteMany();
     await prisma.attendanceRecord.deleteMany();
@@ -290,5 +296,27 @@ describe('Certificate Template Engine Subsystem (E2E) (M11)', () => {
       expect(parsedDoc.getTitle()).toContain('Ananya Sharma');
       expect(parsedDoc.getAuthor()).toBe('CSI GCET Student Branch');
     });
+  });
+
+  afterAll(async () => {
+    await prisma.committeeAsset.deleteMany();
+    await prisma.checklistRun.deleteMany();
+    await prisma.checklistItem.deleteMany();
+    await prisma.checklist.deleteMany();
+    await prisma.task.deleteMany();
+    await prisma.passport.deleteMany();
+    await prisma.certificate.deleteMany();
+    await prisma.certificateBatch.deleteMany();
+    await prisma.attendanceRecord.deleteMany();
+    await prisma.attendanceSession.deleteMany();
+    await prisma.registration.deleteMany();
+    await prisma.eventGuest.deleteMany();
+    await prisma.event.deleteMany();
+    await prisma.session.deleteMany();
+    await prisma.verificationToken.deleteMany();
+    await prisma.passwordResetToken.deleteMany();
+    await prisma.roleAssignment.deleteMany();
+    await prisma.user.deleteMany();
+    await app.close();
   });
 });

@@ -45,6 +45,12 @@ describe('Certificate Batch & Idempotency Subsystem (E2E) (M12)', () => {
     await assertStrictTestDatabase(prisma);
 
     // Clean tables
+    await prisma.committeeAsset.deleteMany();
+    await prisma.checklistRun.deleteMany();
+    await prisma.checklistItem.deleteMany();
+    await prisma.checklist.deleteMany();
+    await prisma.task.deleteMany();
+    await prisma.passport.deleteMany();
     await prisma.certificate.deleteMany();
     await prisma.certificateBatch.deleteMany();
     await prisma.attendanceRecord.deleteMany();
@@ -203,6 +209,12 @@ describe('Certificate Batch & Idempotency Subsystem (E2E) (M12)', () => {
   });
 
   afterAll(async () => {
+    await prisma.committeeAsset.deleteMany();
+    await prisma.checklistRun.deleteMany();
+    await prisma.checklistItem.deleteMany();
+    await prisma.checklist.deleteMany();
+    await prisma.task.deleteMany();
+    await prisma.passport.deleteMany();
     await prisma.certificate.deleteMany();
     await prisma.certificateBatch.deleteMany();
     await prisma.attendanceRecord.deleteMany();

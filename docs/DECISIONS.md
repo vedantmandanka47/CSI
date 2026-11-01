@@ -186,3 +186,43 @@ The system must prevent cross-committee unauthorized data access (IDOR), strictl
 - Future elected committee members cannot preview private workspaces prior to their official term start date.
 - Seamless, intuitive workflow for volunteers with multiple responsibilities.
 
+---
+
+## ADR-007: Task Lifecycle, Sign-Off Protocols, and Media Asset Pipeline Architecture (Module M16)
+
+### Status
+Accepted `[DEFAULT]`
+
+### Context
+Committee operations require structured operational tooling within the role-specific workspace shell (`/workspaces/[code]`):
+1. Collaborative task tracking with committee-scoped boundaries, deadline monitoring, and assignee validation.
+2. Event run checklists enabling repeatable operational readiness drills (e.g., stage checks, AV setup, speaker hospitality), where completion states are trackable per item and final execution requires verified sign-off accountability.
+3. Media asset workflows for promotional banners, posters, and documentation copy requiring binary file integrity verification, file size limits, magic byte validation, and lead approval before publication.
+
+Ad-hoc file uploads and unverified checklists present severe security risks: malicious executables could be uploaded, tasks could be assigned to unauthorized external users (IDOR), and event checklists could be falsely signed off by non-leadership members.
+
+### Decision
+1. **Committee-Scoped Task Management:**
+   - Tasks are bound to a committee (`committee_id`) and optionally linked to an event (`event_id`).
+   - Assignee membership validation: `tasks.service.ts` verifies that the `assignedToId` user holds an active role assignment in the target committee during the active tenure window, or possesses executive oversight (`PRESIDENT`, `VP`, `ADMIN`). If an external or inactive user is specified, creation fails with HTTP 400 Bad Request (`TASK_ASSIGNMENT_INVALID`).
+   - Task lifecycle states: `todo`, `in_progress`, `in_review`, `completed`, `cancelled`. Status updates and deletions are restricted to committee members, creators, or leadership, capturing `task.created`, `task.updated`, and `task.deleted` in the append-only audit trail.
+2. **Pre-Event Run Checklists & Verified Sign-Off Protocols:**
+   - Checklists support reusable templates (`isTemplate: true`) and per-item toggling with audit timestamps (`completedAt`) and user accountability (`completedById`).
+   - Checklist runs instantiate operational execution passes bound to specific events.
+   - Lead-only sign-off gate: only committee leads (`LEAD`, `CO_LEAD`), core leadership, or branch executives can execute sign-offs. Duplicate sign-off attempts fail closed with HTTP 409 Conflict (`CHECKLIST_RUN_ALREADY_SIGNED`). Sign-offs record audit entries (`checklist_run.signed_off`).
+3. **Media Asset Repository & Verification Pipeline:**
+   - **Path-Jailed Storage:** Uploaded files are written strictly to an isolated disk directory (`storage/workspaces/assets`) with generated UUID filenames preventing path traversal.
+   - **Magic Byte Inspection:** File contents are verified via binary header signatures (PNG, JPEG, WEBP, PDF, SVG, MD). Spoofed file extensions (e.g., executable disguised as `.png`) are rejected with HTTP 400 (`ASSET_INVALID_TYPE`).
+   - **File Size Limit:** Enforced at 10 MB maximum. Larger uploads fail with HTTP 400 (`ASSET_FILE_TOO_LARGE`).
+   - **Cryptographic Integrity & AUD-CERT-01 Fail-Safe Pattern:** Every uploaded asset is hashed with SHA-256 upon arrival and stored in `committee_assets.file_hash`. Downloads recalculate the on-disk SHA-256 checksum in real time; if the file is missing or the hash differs, the download aborts immediately with HTTP 409 Conflict (`ASSET_FILE_UNAVAILABLE` or `ASSET_INTEGRITY_MISMATCH`).
+   - **Lead Review Workflow:** Leads or branch executives can review assets, transitioning them between `approved` and `rejected` with mandatory review notes, logged under `asset.reviewed`.
+4. **Relational Data Integrity:**
+   - Cascade deletion: when a committee is deleted, its tasks, checklists, and assets are cleanly removed.
+   - Restrict on `createdBy` prevents deletion of users who created operational artifacts without explicit prior reassignment.
+
+### Consequences
+- Full IDOR prevention across committee task assignments and asset reviews.
+- Strict anti-malware and file spoofing protection on all media assets.
+- Immutable accountability for pre-event operational checklist sign-offs.
+
+

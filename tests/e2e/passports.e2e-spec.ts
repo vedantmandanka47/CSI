@@ -41,6 +41,11 @@ describe('Student Activity Passport & Extracurricular Dossier (E2E) (M14)', () =
     await assertStrictTestDatabase(prisma);
 
     // Clean tables in reverse dependency order
+    await prisma.committeeAsset.deleteMany();
+    await prisma.checklistRun.deleteMany();
+    await prisma.checklistItem.deleteMany();
+    await prisma.checklist.deleteMany();
+    await prisma.task.deleteMany();
     await prisma.passport.deleteMany();
     await prisma.certificate.deleteMany();
     await prisma.certificateBatch.deleteMany();
@@ -596,5 +601,26 @@ describe('Student Activity Passport & Extracurricular Dossier (E2E) (M14)', () =
       expect(rateLimitedRes.status).toBe(429);
       expect(rateLimitedRes.headers['retry-after']).toBeDefined();
     });
+  });
+
+  afterAll(async () => {
+    await prisma.committeeAsset.deleteMany();
+    await prisma.checklistRun.deleteMany();
+    await prisma.checklistItem.deleteMany();
+    await prisma.checklist.deleteMany();
+    await prisma.task.deleteMany();
+    await prisma.passport.deleteMany();
+    await prisma.certificate.deleteMany();
+    await prisma.certificateBatch.deleteMany();
+    await prisma.attendanceRecord.deleteMany();
+    await prisma.attendanceSession.deleteMany();
+    await prisma.registration.deleteMany();
+    await prisma.session.deleteMany();
+    await prisma.roleAssignment.deleteMany();
+    await prisma.event.deleteMany();
+    await prisma.user.deleteMany();
+    await prisma.committee.deleteMany();
+    await prisma.role.deleteMany();
+    await app.close();
   });
 });

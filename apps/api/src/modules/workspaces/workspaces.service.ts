@@ -156,15 +156,21 @@ export class WorkspacesService {
   }
 
   /**
-   * Retrieve the full workspace details for a specific committee.
-   * Validates committee existence, active tenure, and cross-committee boundary permissions.
+   * Validate user access to a committee workspace based on membership tenure or executive oversight.
+   * Throws 404 if committee does not exist.
+   * Throws 403 if user is not authorized or tenure is expired / not started.
    */
-  async getWorkspaceDetails(
+  async validateCommitteeAccess(
     userId: string,
     userRoles: RoleCode[],
     committeeCode: string,
-    ip?: string,
-  ): Promise<CommitteeWorkspaceDetails> {
+  ): Promise<{
+    committee: { id: string; code: string; name: string; description: string; createdAt: Date };
+    isExecutive: boolean;
+    activeRoleCode: string;
+    activeTermStart: string;
+    activeTermEnd: string | null;
+  }> {
     const code = committeeCode.toLowerCase().trim();
     const now = new Date();
 
@@ -254,6 +260,35 @@ export class WorkspacesService {
       activeTermStart = activeAssignment.termStart.toISOString();
       activeTermEnd = activeAssignment.termEnd ? activeAssignment.termEnd.toISOString() : null;
     }
+
+    return {
+      committee,
+      isExecutive,
+      activeRoleCode,
+      activeTermStart,
+      activeTermEnd,
+    };
+  }
+
+  /**
+   * Retrieve the full workspace details for a specific committee.
+   * Validates committee existence, active tenure, and cross-committee boundary permissions.
+   */
+  async getWorkspaceDetails(
+    userId: string,
+    userRoles: RoleCode[],
+    committeeCode: string,
+    ip?: string,
+  ): Promise<CommitteeWorkspaceDetails> {
+    const {
+      committee,
+      isExecutive,
+      activeRoleCode,
+      activeTermStart,
+      activeTermEnd,
+    } = await this.validateCommitteeAccess(userId, userRoles, committeeCode);
+
+    const now = new Date();
 
     // Audit log workspace access
     try {
