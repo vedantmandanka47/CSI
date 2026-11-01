@@ -102,6 +102,15 @@ jobs:
           STORAGE_ROOT_DIR: /tmp/csi-storage
         run: npm run test:e2e --prefix apps/api
 
+      # M19: Backup & Disaster Recovery tooling verification in CI
+      - name: Verify backup and disaster recovery tooling
+        env:
+          DATABASE_URL: postgresql://csi_app:ci_test_app_pass@localhost:5432/csi_gcet_test
+          MIGRATION_DATABASE_URL: postgresql://csi_migrator:ci_test_migrator_pass@localhost:5432/csi_gcet_test
+        run: |
+          npx tsx scripts/database/backup.ts --database csi_gcet_test --output storage/ci_backups --no-storage
+          npx tsx scripts/database/restore-drill.ts --verify-only
+
       - name: Build monorepo
         env:
           NODE_ENV: production

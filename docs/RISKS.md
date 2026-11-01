@@ -49,6 +49,10 @@ This document tracks all recognized security, operational, architectural, and da
 | **RR:VC-02** | **P1** | Accidental commit of prompt files, instructions, or internal developer briefs | `.gitignore` rule matching `*prompt*.md` and `BUILD_PROMPT.md` strictly enforced | Pre-commit git status verification; Owner directive |
 | **RR:VC-03** | **P1** | Destructive database commands run against wrong environment | `scripts/database/db-reset-dev.ts` validates `current_database() === 'csi_gcet_dev'` and immediately aborts otherwise | Safety check test; Section 4.4 |
 | **RR:VC-04** | **P1** | Untracked configuration differences between development and production | 12-factor configuration; all environment variables documented in committed `.env.example` files | `env.ts` strict Zod schema validation; DEP-10 |
+| **RR:VC-05** | **P0** | Accidental database overwrite, table truncation, or data loss during recovery drills | `scripts/database/restore-drill.ts` inspects target table counts; strictly refuses write if target contains tables (`tbl_count > 0`); destructive commands permanently disabled | `restore-drill.ts`, `backup-and-restore.spec.ts` |
+| **RR:VC-06** | **P1** | Undetected backup corruption, truncation, or tampering | Every backup is hashed with SHA-256 and verified via `pg_restore --list` catalog parsing; restore drill re-hashes archive before inspection | `backup.ts`, `restore-drill.ts`, `backup-and-restore.spec.ts` |
+| **RR:VC-07** | **P1** | Disconnection between restored database records and on-disk media/certificate files | Automated companion `.storage.tar.gz` packaging in `backup.ts` archiving certificates, passports, and assets with SHA-256 verification | `backup.ts`, `restore-drill.ts`, `backup-and-restore.spec.ts` |
+| **RR:VC-08** | **P1** | Path traversal or accidental deletion of unrelated system files during backup retention cleanup | `enforceRetention()` asserts candidate deletion paths strictly reside within the resolved backup directory (`storage/backups`) | `backup.ts`, `backup-and-restore.spec.ts` |
 
 ---
 

@@ -32,6 +32,8 @@
     "check:colors": "node scripts/validation/check-hardcoded-colors.mjs",
     "check:contrast": "node scripts/validation/check-contrast.mjs",
     "check:content": "node scripts/validation/check-content.mjs",
+    "backup": "tsx scripts/database/backup.ts",
+    "restore:drill": "tsx scripts/database/restore-drill.ts",
     "audit:deps": "npm audit --omit=dev --audit-level=critical"
   },
   "devDependencies": {

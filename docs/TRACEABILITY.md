@@ -258,6 +258,20 @@ This matrix maps every functional requirement (`FR-`), architectural rule (`ARCH
 | **SEC-DEP-01** | Bounded request parsing defense-in-depth mitigations against Zod advisory `GHSA-mrhx-c7xc-m3w5` (1 MB body limit, 10 MB multipart cap, schema string limits) (`AUD-DEP-01`) | `apps/api/src/main.ts`, `@csi/shared` | `npm run audit:deps`, code review | **VERIFIED** |
 | **SEC-PKI-01** | Cryptographic digital signature vs SHA-256 tamper-evident integrity boundary formal disposition (`M14-AUD-01`), documenting institutional PKI dependencies under Indian IT Act 2000 | `apps/api/src/modules/passports/services/passport-pdf.service.ts`, `docs/M18_PRODUCTION_READINESS_REPORT.md` | Audit verification & report disposition | **VERIFIED** |
 
+### Module M19: Backup Drills, Runbook & Maintainer Handover
+
+| Requirement ID | Description | Implementing Component | Automated Test Suite / Verification | Status |
+|---|---|---|---|:---:|
+| **OPS-01-BCK** | Automated native PostgreSQL custom format (`-Fc`) backup generation with Table of Contents validation, record counts, and signed SHA-256 `manifest.json` | `scripts/database/backup.ts` | `backup-and-restore.spec.ts` (11/11 tests), backup execution | **VERIFIED** |
+| **OPS-02-RET** | Jailed backup retention policy enforcement safely retaining $N$ recent backups and safely removing older dumps, storage archives, and manifests | `scripts/database/backup.ts` | `backup-and-restore.spec.ts` | **VERIFIED** |
+| **OPS-03-STR** | Companion active file storage packaging (`.storage.tar.gz`) archiving certificates, passports, and media assets with SHA-256 verification | `scripts/database/backup.ts` | `backup-and-restore.spec.ts`, backup execution | **VERIFIED** |
+| **OPS-04-DRL** | Automated disaster recovery restore drill subsystem with manifest checking, checksum matching, TOC parsing, and timestamped markdown report generation | `scripts/database/restore-drill.ts` | `backup-and-restore.spec.ts`, drill execution | **VERIFIED** |
+| **OPS-05-SAF** | Critical database safety guards inspecting target table counts, refusing to overwrite active populated databases, and disabling destructive commands (`DROP DATABASE`, `TRUNCATE`, cascade resets) | `scripts/database/restore-drill.ts` | `backup-and-restore.spec.ts`, live refusal on `csi_gcet_test` | **VERIFIED** |
+| **OPS-06-RNB** | Comprehensive Operations Runbook for student maintainers covering environment, setup, maintenance, deployments, recovery, and troubleshooting | `docs/OPERATIONS_RUNBOOK.md` | Runbook inspection & review | **VERIFIED** |
+| **OPS-07-HND** | Formal Maintainer Handover Manual detailing domain lifecycles, RBAC, credentials, institutional escalation, and ownership transfer protocols | `docs/MAINTAINER_HANDOVER.md` | Handover manual inspection & review | **VERIFIED** |
+| **OPS-08-CI** | Continuous integration validation running backup and disaster recovery tooling against native PostgreSQL on GitHub Actions | `.github/workflows/ci.yml`, `package.json` | CI workflow step & npm scripts (`npm run backup`, `npm run restore:drill`) | **VERIFIED** |
+
+
 
 
 

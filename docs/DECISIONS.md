@@ -370,5 +370,65 @@ Accepted `[DECIDED]`
 - Production build and CI gates remain reliable and unblocked.
 - Effective immunity from memory exhaustion vectors via payload size ceilings.
 
+---
+
+## ADR-013: PostgreSQL Custom Format Backups, Cryptographic SHA-256 Manifests, and Jailed Retention (Module M19)
+
+### Status
+Accepted `[DEFAULT]`
+
+### Context
+Disaster recovery and backup resilience require a standardized, tamper-evident format that captures the complete PostgreSQL database schema, data, triggers, and sequences while remaining verifiable and portable. Plain SQL text dumps are large, lack structural indexing, cannot be selectively inspected or reordered during restoration, and are difficult to verify without loading into a database.
+
+### Decision
+1. **PostgreSQL Custom Archive Format (`-Fc`):**
+   - Utilize `pg_dump -Fc` as the authoritative backup standard.
+   - Embeds an internal compressed binary Table of Contents (TOC), allowing `pg_restore --list` validation without database connection.
+   - Supports parallel and selective restoration with `--no-owner --no-privileges`.
+2. **Cryptographic Checksum & Manifest Generation:**
+   - Every generated backup archive is hashed with SHA-256.
+   - A companion `manifest.json` is generated recording backup ID (UUID), timestamp, source database, table count, domain record counts, migration tag, and tool versions.
+   - Verification re-computes the hash and strictly asserts matching checksums.
+3. **Companion Storage Packaging:**
+   - User uploads, certificates, passports, and media assets are packaged into a companion `.storage.tar.gz` archive with SHA-256 checksumming, ensuring application file assets can be restored in lockstep with the relational database.
+4. **Path-Jailed Retention Enforcement:**
+   - Retention pruning enforces a configurable keep count (default: 7) and strictly verifies that deletion targets reside within the resolved backup directory, preventing accidental deletion of unrelated system files.
+
+### Consequences
+- Compact, compressed, tamper-evident backup archives.
+- Instant, non-destructive Table of Contents validation via `pg_restore --list`.
+- Coordinated database and file storage recovery capability.
+
+---
+
+## ADR-014: Non-Destructive Disaster Recovery Restore Drills and Active Database Safety Refusal Policy (Module M19)
+
+### Status
+Accepted `[DEFAULT]`
+
+### Context
+Disaster recovery testing requires regular drill execution. However, executing restore scripts in an active environment poses severe operational hazards: a script could accidentally overwrite active development data, drop test databases with pending fixtures, or overwrite a production database.
+
+### Decision
+1. **Hard Safety Refusal on Populated Targets:**
+   - The disaster recovery drill script (`scripts/database/restore-drill.ts`) connects to the target database and counts existing public tables before executing any write operations.
+   - If the target database contains tables (`tbl_count > 0`), the script **refuses to write** to the database, logs a safety refusal notice, and safely concludes the live restoration phase as `BLOCKED (ISOLATED_TARGET_UNAVAILABLE)`.
+2. **Prohibition of Destructive Commands:**
+   - Destructive operations (`DROP DATABASE`, `TRUNCATE`, cascade resets) are permanently disabled in restore drill tooling.
+3. **Multi-Stage Verification Model:**
+   - The drill executes all non-destructive verification stages:
+     - Checksum validation against manifest.
+     - Table of Contents structural catalog parsing via `pg_restore --list`.
+     - Companion file storage archive tar integrity inspection.
+     - Target database safety boundary evaluation.
+     - Automated markdown report generation recording drill metrics, RPO, and RTO.
+   - Full live database write restoration requires an explicitly provisioned, verified empty scratch database (0 tables).
+
+### Consequences
+- Eliminates any risk of accidental data destruction during automated drills.
+- Provides cryptographic assurance of backup archive viability without requiring risky database overwrites.
+- Fully auditable drill reports with clear distinction between archive validation and live target provisioning.
+
+
 
 
