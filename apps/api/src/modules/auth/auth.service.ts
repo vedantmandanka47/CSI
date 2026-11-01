@@ -172,6 +172,7 @@ export class AuthService {
       include: {
         roleAssignments: {
           where: {
+            termStart: { lte: new Date() },
             OR: [{ termEnd: null }, { termEnd: { gte: new Date() } }],
           },
           include: { role: true },
@@ -420,6 +421,7 @@ export class AuthService {
       include: {
         roleAssignments: {
           where: {
+            termStart: { lte: new Date() },
             OR: [{ termEnd: null }, { termEnd: { gte: new Date() } }],
           },
           include: { role: true },

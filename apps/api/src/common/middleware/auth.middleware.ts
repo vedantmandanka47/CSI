@@ -23,6 +23,7 @@ export class AuthMiddleware implements NestMiddleware {
             include: {
               roleAssignments: {
                 where: {
+                  termStart: { lte: new Date() },
                   OR: [{ termEnd: null }, { termEnd: { gte: new Date() } }],
                 },
                 include: { role: true },

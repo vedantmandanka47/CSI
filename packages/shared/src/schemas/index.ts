@@ -16,3 +16,4 @@ export * from './certificate-template.schema.js';
 export * from './certificate-batch.schema.js';
 export * from './certificate-verification.schema.js';
 export * from './passport.schema.js';
+export * from './workspace.schema.js';

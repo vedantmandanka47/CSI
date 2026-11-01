@@ -66,7 +66,7 @@ async function main() {
   }
   console.log(`✅ Seeded ${roles.length} roles.`);
 
-  // Seed core committees (Appendix B & prompt.md §13)
+  // Seed core committees (PE.md M15 & Appendix B)
   const committees = [
     {
       code: 'logistics',
@@ -81,7 +81,7 @@ async function main() {
     },
     {
       code: 'graphics',
-      name: 'Design & Graphics',
+      name: 'Design & Media',
       description: 'Produces digital posters, certificates, branding assets, and promotional media',
     },
     {
@@ -89,6 +89,18 @@ async function main() {
       name: 'Content & Documentation',
       description:
         'Records event reports, minutes, official correspondence, and post-event publications',
+    },
+    {
+      code: 'pr',
+      name: 'Public Relations',
+      description:
+        'Coordinates campus outreach, social media channels, sponsor communications, and inter-college relations',
+    },
+    {
+      code: 'motion',
+      name: 'Motion & Cinematography',
+      description:
+        'Captures event photography, produces aftermovies, reels, and video documentation',
     },
   ];
 

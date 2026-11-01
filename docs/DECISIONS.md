@@ -148,3 +148,41 @@ During post-implementation audit of Module M14, three critical architectural con
 - Clean historical audit trail without phantom valid passports.
 - Honest, rigorous cryptographic posture that avoids false security claims.
 
+---
+
+## ADR-006: Committee Workspace Authorization, Cross-Committee Jails, and Dual-Role Shell Architecture (Module M15)
+
+### Status
+Accepted `[DEFAULT]`
+
+### Context
+Branch volunteers and office-bearers operate across 6 canonical committees: Technical (`technical`), Content & Documentation (`documentation`), Design & Media (`graphics`), Public Relations (`pr`), Motion & Cinematography (`motion`), and Logistics & Operations (`logistics`).
+Volunteers frequently hold assignments in multiple committees concurrently (e.g., Lead in Technical and Volunteer in Logistics), while branch leadership (`PRESIDENT`, `VP`, `ADMIN`) requires branch-wide executive oversight across all committees.
+The system must prevent cross-committee unauthorized data access (IDOR), strictly enforce tenure validity boundaries, offer seamless UI context switching for dual-role members, and record immutable audit logs of workspace access.
+
+### Decision
+1. **Six Canonical Committees:** Formally standardized in database seed and domain enums (`packages/shared/src/enums/domain.enum.ts`):
+   - `technical`: Technical Committee
+   - `documentation`: Content & Documentation
+   - `graphics`: Design & Media
+   - `pr`: Public Relations
+   - `motion`: Motion & Cinematography
+   - `logistics`: Logistics & Operations
+2. **Strict Server-Side Authorization & Cross-Committee Jails:**
+   - Every workspace endpoint (`/api/me/workspaces`, `/api/workspaces/:committeeCode`, subroutes) validates the user's role assignment against the target committee.
+   - Unauthorized attempts by non-members or members of other committees fail closed with HTTP 403 Forbidden (`WORKSPACE_ACCESS_DENIED`).
+   - Branch executives (`PRESIDENT`, `VP`, `ADMIN`) receive branch-wide oversight with `isExecutive: true`.
+3. **Active Tenure Window Enforcement:**
+   - A role assignment is considered active if and only if `termStart <= now` and (`termEnd == null || termEnd >= now`), and `user.status == 'active'`.
+   - Both `AuthMiddleware` and `WorkspacesService` enforce this window, blocking future-dated assignments (`COMMITTEE_TENURE_NOT_STARTED`) and expired tenures (`COMMITTEE_TENURE_EXPIRED`).
+4. **Dual-Role UI Context Switching:**
+   - If a member belongs to multiple committees, `/workspaces` displays a selection grid, and the header within `/workspaces/[code]` renders a context-switcher dropdown to jump between active committees.
+   - For members with a single committee assignment, `/workspaces` automatically navigates directly to their workspace.
+5. **Audit Trail:**
+   - Every access to `/api/workspaces/:committeeCode` records an immutable audit log entry (`workspace.accessed`), capturing `actorId`, `targetType = 'committee'`, `targetId`, `ip`, and `afterJson: { committeeCode }`.
+
+### Consequences
+- Full protection against cross-committee privilege escalation and data scraping.
+- Future elected committee members cannot preview private workspaces prior to their official term start date.
+- Seamless, intuitive workflow for volunteers with multiple responsibilities.
+

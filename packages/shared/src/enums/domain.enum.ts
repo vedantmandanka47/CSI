@@ -67,3 +67,15 @@ export const AvCapability = {
 
 export type AvCapability = (typeof AvCapability)[keyof typeof AvCapability];
 export const ALL_AV_CAPABILITIES = Object.values(AvCapability);
+
+export const CommitteeCode = {
+  TECHNICAL: 'technical',
+  DOCUMENTATION: 'documentation',
+  GRAPHICS: 'graphics',
+  PR: 'pr',
+  MOTION: 'motion',
+  LOGISTICS: 'logistics',
+} as const;
+
+export type CommitteeCode = (typeof CommitteeCode)[keyof typeof CommitteeCode];
+export const ALL_COMMITTEE_CODES = Object.values(CommitteeCode);
