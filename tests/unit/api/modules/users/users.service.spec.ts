@@ -28,6 +28,7 @@ describe('UsersService', () => {
     branch: 'CP',
     year: 3,
     photo: null,
+    photoConsent: false,
     status: 'active',
     passwordHash: '$argon2id$fakehash',
     createdAt: new Date('2026-01-01'),
@@ -117,5 +118,43 @@ describe('UsersService', () => {
       },
     });
     expect(updated.status).toBe(UserStatus.INACTIVE);
+  });
+
+  it('updatePhotoConsent updates photo consent flag and writes audit log entry', async () => {
+    mockPrisma.user.update.mockResolvedValueOnce({
+      ...sampleUser,
+      photo: 'https://example.com/photo.jpg',
+      photoConsent: true,
+    });
+
+    const updated = await service.updatePhotoConsent('u1', true, 'u1');
+
+    expect(mockPrisma.$transaction).toHaveBeenCalled();
+    expect(mockPrisma.auditLog.create).toHaveBeenCalledWith({
+      data: {
+        actorId: 'u1',
+        action: 'USER_PHOTO_CONSENT_UPDATE',
+        targetType: 'users',
+        targetId: 'u1',
+        beforeJson: { photo_consent: false },
+        afterJson: { photo_consent: true },
+      },
+    });
+    expect(updated.photo_consent).toBe(true);
+    expect(updated.photo).toBe('https://example.com/photo.jpg');
+  });
+
+  it('suppresses photo in output if photoConsent is false (DPDP data minimization)', async () => {
+    mockPrisma.user.findMany.mockResolvedValueOnce([
+      {
+        ...sampleUser,
+        photo: 'https://example.com/private-photo.jpg',
+        photoConsent: false,
+      },
+    ]);
+
+    const result = await service.findAll({ page: 1, per_page: 20 });
+    expect(result.data[0]?.photo_consent).toBe(false);
+    expect(result.data[0]?.photo).toBeNull();
   });
 });

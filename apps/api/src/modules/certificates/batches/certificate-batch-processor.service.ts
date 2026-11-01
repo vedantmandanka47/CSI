@@ -64,11 +64,11 @@ export class CertificateBatchProcessorService {
    */
   private async executeBatch(batchId: string): Promise<void> {
     try {
-      // 1. Concurrency control: Atomic state transition from 'pending' or 'partially_completed' to 'processing'
+      // 1. Concurrency control: Atomic state transition from 'pending', 'partially_completed', or retry 'processing' to 'processing'
       const updated = await this.prisma.certificateBatch.updateMany({
         where: {
           id: batchId,
-          status: { in: [BatchStatus.PENDING, BatchStatus.PARTIALLY_COMPLETED] },
+          status: { in: [BatchStatus.PENDING, BatchStatus.PARTIALLY_COMPLETED, BatchStatus.PROCESSING] },
         },
         data: {
           status: BatchStatus.PROCESSING,
@@ -202,24 +202,27 @@ export class CertificateBatchProcessorService {
       throw new NotFoundException(`Batch '${batchId}' not found.`);
     }
 
-    const eligibleFailed = await this.prisma.certificate.findMany({
+    const eligibleCerts = await this.prisma.certificate.findMany({
       where: {
         batchId,
-        status: CertificateStatus.FAILED,
-        retryCount: { lt: maxRetries },
+        OR: [
+          { status: CertificateStatus.FAILED, retryCount: { lt: maxRetries } },
+          { status: CertificateStatus.PROCESSING }, // Recover zombie processing certificates (AUD-CERT-03)
+          { status: CertificateStatus.PENDING },
+        ],
       },
     });
 
-    if (eligibleFailed.length === 0) {
+    if (eligibleCerts.length === 0) {
       throw new BadRequestException(
-        `No eligible failed certificates found for retry (max retries: ${maxRetries}).`,
+        `No eligible failed or interrupted certificates found for retry (max retries: ${maxRetries}).`,
       );
     }
 
     // Reset eligible certificates to pending
     await this.prisma.certificate.updateMany({
       where: {
-        id: { in: eligibleFailed.map((c) => c.id) },
+        id: { in: eligibleCerts.map((c) => c.id) },
       },
       data: {
         status: CertificateStatus.PENDING,

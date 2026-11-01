@@ -19,6 +19,7 @@ export const UserSummarySchema = z.object({
   branch: z.string().nullable(),
   year: z.number().int().min(1).max(4).nullable(),
   photo: z.string().nullable(),
+  photo_consent: z.boolean().default(false),
   status: UserStatusSchema,
   created_at: z.string().or(z.date()),
 });
@@ -60,4 +61,10 @@ export const UpdateUserStatusSchema = z.object({
 });
 
 export type UpdateUserStatus = z.infer<typeof UpdateUserStatusSchema>;
+
+export const UpdatePhotoConsentSchema = z.object({
+  photo_consent: z.boolean(),
+});
+
+export type UpdatePhotoConsent = z.infer<typeof UpdatePhotoConsentSchema>;
 

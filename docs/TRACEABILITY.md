@@ -237,6 +237,28 @@ This matrix maps every functional requirement (`FR-`), architectural rule (`ARCH
 | **UI-TERM-02** | Guided Annual Rollover Wizard Modal featuring target selection, transition preview with warnings, incoming board appointment form, and typed safety confirmation | `apps/web/src/app/admin/terms/page.tsx` | Next.js build compilation, `check-content.mjs` | **VERIFIED** |
 | **UI-TERM-03** | Historical Term Snapshot Viewer Modal and Rollover Execution History Drawer displaying frozen metrics, closing rosters, and historical audit logs | `apps/web/src/app/admin/terms/page.tsx` | Next.js build compilation, `check-hardcoded-colors.mjs`, `check-contrast.mjs` | **VERIFIED** |
 
+---
+
+## Phase 5 — Production Hardening & Handover
+
+### Module M18: Production Hardening & DPDP Privacy Audit
+
+| Requirement ID | Description | Implementing Component | Automated Test Suite / Verification | Status |
+|---|---|---|---|:---:|
+| **SEC-04-AES** | Authenticated AES-256-GCM encryption at rest for event attendance TOTP secrets (`AUD-SEC-04`), safeguarding secrets from physical database dump exposure | `apps/api/src/common/crypto/encryption.ts`, `attendance.service.ts` | `encryption.spec.ts`, `security-hardening.e2e-spec.ts` | **VERIFIED** |
+| **SEC-02-ID** | Authenticated and rate-limited QR pass verification endpoint (`POST /api/id-card/verify`) requiring `ATTENDANCE_TAKE` permission and sliding-window IP throttling (`AUD-SEC-02`), preventing anonymous student identity enumeration | `apps/api/src/modules/id-card/id-card.controller.ts` | `security-hardening.e2e-spec.ts` | **VERIFIED** |
+| **CERT-02-IDEM** | Cryptographic SHA-256 request payload hash validation and TTL expiration on idempotency keys (`AUD-CERT-02`), rejecting altered payload replays with 400 Bad Request | `apps/api/src/modules/certificates/issuance/certificate-issuance.service.ts` | `security-hardening.e2e-spec.ts` | **VERIFIED** |
+| **CERT-03-CRASH** | Zombie batch crash recovery allowing batches stuck in `PROCESSING` status following host crashes to be retried and pending items reset (`AUD-CERT-03`) | `apps/api/src/modules/certificates/batches/certificate-batch-processor.service.ts` | `security-hardening.e2e-spec.ts` | **VERIFIED** |
+| **PERF-01-MEM** | In-memory `RateLimiterService` sliding-window key eviction timer (`evictExpired`) with graceful `onModuleDestroy()` teardown (`AUD-PERF-01`), eliminating unbounded memory leaks | `apps/api/src/common/services/rate-limiter.service.ts` | `rate-limiter.service.spec.ts` | **VERIFIED** |
+| **DATA-01-SYNC** | Concurrency and duplicate protection for offline attendance sync operations (`AUD-DATA-01`), eliminating crashes on `session_subject_unique` and cleanly reporting conflicts | `apps/api/src/modules/attendance/attendance.service.ts` | `security-hardening.e2e-spec.ts` | **VERIFIED** |
+| **CI-01-GATES** | GitHub Actions CI pipeline hardening executing complete E2E test suites, PostgreSQL venue exclusion constraints, and critical dependency audits (`AUD-CI-01`) | `.github/workflows/ci.yml`, `package.json` | `scripts/validation/test-venue-exclusion.ts`, `npm run audit:deps` | **VERIFIED** |
+| **PRIV-01-RET** | Automated multi-entity retention purging and guest data anonymization service (`RetentionService`) executed via manual or scheduled triggers (`AUD-PRIV-01`), clearing expired sessions, tokens, idempotency records, and anonymizing concluded guest PII older than 90 days | `apps/api/src/modules/maintenance/retention.service.ts`, `maintenance.controller.ts` | `retention.service.spec.ts`, `security-hardening.e2e-spec.ts` | **VERIFIED** |
+| **PRIV-02-CONS** | Explicit student photograph consent tracking (`User.photoConsent` / `photo_consent`) with dedicated `PATCH /api/users/:id/photo-consent` toggle and serialization gating (`photo: u.photoConsent ? u.photo : null`), preventing unconsented photo dissemination | `apps/api/src/modules/users/users.service.ts`, `users.controller.ts`, `@csi/shared` | `users.service.spec.ts`, `security-hardening.e2e-spec.ts` | **VERIFIED** |
+| **PRIV-03-IP** | Rolling 90-day presentation anonymization of IP addresses in audit logs (`[ANONYMIZED]`) preserving PostgreSQL trigger-enforced ledger immutability (`PRIV-06`) | `apps/api/src/modules/audit-logs/audit-logs.service.ts` | `audit-logs.service.spec.ts`, `security-hardening.e2e-spec.ts` | **VERIFIED** |
+| **SEC-DEP-01** | Bounded request parsing defense-in-depth mitigations against Zod advisory `GHSA-mrhx-c7xc-m3w5` (1 MB body limit, 10 MB multipart cap, schema string limits) (`AUD-DEP-01`) | `apps/api/src/main.ts`, `@csi/shared` | `npm run audit:deps`, code review | **VERIFIED** |
+| **SEC-PKI-01** | Cryptographic digital signature vs SHA-256 tamper-evident integrity boundary formal disposition (`M14-AUD-01`), documenting institutional PKI dependencies under Indian IT Act 2000 | `apps/api/src/modules/passports/services/passport-pdf.service.ts`, `docs/M18_PRODUCTION_READINESS_REPORT.md` | Audit verification & report disposition | **VERIFIED** |
+
+
 
 
 

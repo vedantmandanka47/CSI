@@ -48,15 +48,35 @@ export class CertificateIssuanceService {
     actorId: string,
     clientIp?: string,
   ): Promise<CertificateBatchResponse> {
-    // 1. Idempotency Check (Idempotency-Key header)
+    // 1. Idempotency Check (Idempotency-Key header) (AUD-CERT-02)
     if (input.idempotencyKey) {
       const existingKey = await this.prisma.idempotencyKey.findUnique({
         where: { key: input.idempotencyKey },
       });
 
-      if (existingKey && existingKey.response) {
-        this.logger.log(`Returning cached response for idempotency key '${input.idempotencyKey}'`);
-        return existingKey.response as unknown as CertificateBatchResponse;
+      if (existingKey) {
+        // Expiration check: if the key has expired, purge and re-issue
+        if (existingKey.expiresAt && existingKey.expiresAt <= new Date()) {
+          this.logger.log(`Idempotency key '${input.idempotencyKey}' has expired. Purging stale key.`);
+          await this.prisma.idempotencyKey.delete({ where: { key: input.idempotencyKey } }).catch(() => {});
+        } else {
+          // Payload hash match check: ensure replay payload is identical
+          const currentRequestHash = createHash('sha256')
+            .update(JSON.stringify(input))
+            .digest('hex');
+
+          if (existingKey.requestHash && existingKey.requestHash !== currentRequestHash) {
+            throw new BadRequestException({
+              code: 'IDEMPOTENCY_PAYLOAD_MISMATCH',
+              message: 'Provided Idempotency-Key was already used with a different request payload.',
+            });
+          }
+
+          if (existingKey.response) {
+            this.logger.log(`Returning cached response for idempotency key '${input.idempotencyKey}'`);
+            return existingKey.response as unknown as CertificateBatchResponse;
+          }
+        }
       }
     }
 

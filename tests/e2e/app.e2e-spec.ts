@@ -124,14 +124,17 @@ describe('API Foundation & Health (E2E) (DEP-13, ARCH-05, ARCH-15)', () => {
     expect(response.body.error.code).toBe('UNAUTHENTICATED');
   });
 
-  it('POST /api/id-card/verify validates and rejects malformed or invalid pass tokens', async () => {
+  it('POST /api/id-card/verify requires authentication and returns 401 when unauthenticated (AUD-SEC-02)', async () => {
+    const dummyCsrf = 'csrf-test-token-value';
     const response = await request(app.getHttpServer())
       .post('/api/id-card/verify')
+      .set('Cookie', [`csi_csrf=${dummyCsrf}`])
+      .set('X-CSRF-Token', dummyCsrf)
       .send({ token: 'csi_pass.invalidpayload.invalidsignature' })
-      .expect(200);
+      .expect(401);
 
-    expect(response.body.data.valid).toBe(false);
-    expect(response.body.data.message).toBeDefined();
+    expect(response.body.error).toBeDefined();
+    expect(response.body.error.code).toBe('UNAUTHENTICATED');
   });
 
   it('GET /api/admin/drives & /api/admin/members/applications require authentication (RBAC)', async () => {

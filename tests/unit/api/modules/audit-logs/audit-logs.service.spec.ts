@@ -79,5 +79,19 @@ describe('AuditLogsService (SEC-23)', () => {
       orderBy: { createdAt: 'desc' },
     });
   });
+
+  it('anonymizes IP address when audit record is older than 90 days (PRIV-06)', async () => {
+    const oldDate = new Date(Date.now() - 95 * 24 * 60 * 60 * 1000);
+    mockPrisma.auditLog.findMany.mockResolvedValueOnce([
+      {
+        ...sampleLog,
+        ip: '192.168.1.100',
+        createdAt: oldDate,
+      },
+    ]);
+
+    const result = await service.findAll({ page: 1, per_page: 10 });
+    expect(result.data[0]?.ip).toBe('[ANONYMIZED]');
+  });
 });
 

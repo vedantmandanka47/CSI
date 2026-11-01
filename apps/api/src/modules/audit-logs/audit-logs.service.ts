@@ -47,6 +47,7 @@ export class AuditLogsService {
       }),
     ]);
 
+    const ninetyDaysAgo = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
     const data: AuditLogEntry[] = records.map((r) => ({
       id: r.id,
       actor_id: r.actorId,
@@ -55,7 +56,7 @@ export class AuditLogsService {
       target_id: r.targetId,
       before_json: r.beforeJson,
       after_json: r.afterJson,
-      ip: r.ip,
+      ip: r.createdAt < ninetyDaysAgo ? '[ANONYMIZED]' : r.ip,
       created_at: r.createdAt.toISOString(),
     }));
 

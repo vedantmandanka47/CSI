@@ -70,7 +70,8 @@ export class UsersService {
       phone: u.phone,
       branch: u.branch,
       year: u.year,
-      photo: u.photo,
+      photo: u.photoConsent ? u.photo : null,
+      photo_consent: u.photoConsent,
       status: u.status as UserStatus,
       created_at: u.createdAt.toISOString(),
     }));
@@ -122,11 +123,88 @@ export class UsersService {
       phone: user.phone,
       branch: user.branch,
       year: user.year,
-      photo: user.photo,
+      photo: user.photoConsent ? user.photo : null,
+      photo_consent: user.photoConsent,
       status: user.status as UserStatus,
       created_at: user.createdAt.toISOString(),
       effective_roles: effectiveRoles,
       role_assignments: user.roleAssignments.map((ra) => ({
+        id: ra.id,
+        role_id: ra.roleId,
+        role_code: ra.role.code,
+        role_name: ra.role.name,
+        committee_id: ra.committeeId,
+        committee_code: ra.committee ? ra.committee.code : null,
+        committee_name: ra.committee ? ra.committee.name : null,
+        term_start: ra.termStart.toISOString(),
+        term_end: ra.termEnd ? ra.termEnd.toISOString() : null,
+      })),
+    };
+  }
+
+  async updatePhotoConsent(
+    id: string,
+    photoConsent: boolean,
+    actorId?: string,
+  ): Promise<UserDetail> {
+    const existing = await this.prisma.user.findUnique({
+      where: { id },
+    });
+
+    if (!existing) {
+      throw new NotFoundException(`User with id '${id}' not found`);
+    }
+
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const user = await tx.user.update({
+        where: { id },
+        data: { photoConsent },
+        include: {
+          roleAssignments: {
+            include: { role: true, committee: true },
+            orderBy: { termStart: 'desc' },
+          },
+        },
+      });
+
+      await tx.auditLog.create({
+        data: {
+          actorId: actorId || null,
+          action: 'USER_PHOTO_CONSENT_UPDATE',
+          targetType: 'users',
+          targetId: id,
+          beforeJson: { photo_consent: existing.photoConsent },
+          afterJson: { photo_consent: photoConsent },
+        },
+      });
+
+      return user;
+    });
+
+    const now = new Date();
+    const effectiveRoles = Array.from(
+      new Set(
+        updated.roleAssignments
+          .filter((ra) => !ra.termEnd || ra.termEnd >= now)
+          .map((ra) => ra.role.code),
+      ),
+    );
+
+    return {
+      id: updated.id,
+      enrollment_no: updated.enrollmentNo,
+      name: updated.name,
+      full_name: updated.name,
+      email: updated.email,
+      phone: updated.phone,
+      branch: updated.branch,
+      year: updated.year,
+      photo: updated.photoConsent ? updated.photo : null,
+      photo_consent: updated.photoConsent,
+      status: updated.status as UserStatus,
+      created_at: updated.createdAt.toISOString(),
+      effective_roles: effectiveRoles,
+      role_assignments: updated.roleAssignments.map((ra) => ({
         id: ra.id,
         role_id: ra.roleId,
         role_code: ra.role.code,
@@ -183,7 +261,8 @@ export class UsersService {
       phone: updated.phone,
       branch: updated.branch,
       year: updated.year,
-      photo: updated.photo,
+      photo: updated.photoConsent ? updated.photo : null,
+      photo_consent: updated.photoConsent,
       status: updated.status as UserStatus,
       created_at: updated.createdAt.toISOString(),
     };

@@ -3,13 +3,15 @@ import {
   Get,
   Post,
   Body,
+  Req,
   HttpCode,
   HttpStatus,
   BadRequestException,
 } from '@nestjs/common';
+import { Request } from 'express';
 import { IdCardService } from './id-card.service.js';
 import { CurrentUser, PermissionCode, VerifyQrPassSchema } from '@csi/shared';
-import { RequirePermission, ReqUser, Public } from '../../common/decorators/index.js';
+import { RequirePermission, ReqUser } from '../../common/decorators/index.js';
 import { RateLimiterService } from '../../common/services/rate-limiter.service.js';
 
 @Controller('id-card')
@@ -33,10 +35,13 @@ export class IdCardController {
   /**
    * Cryptographically verify attendee dynamic QR pass (for volunteer/admin scanning)
    */
-  @Public()
+  @RequirePermission(PermissionCode.ATTENDANCE_TAKE)
   @Post('verify')
   @HttpCode(HttpStatus.OK)
-  async verifyQrPass(@Body() rawBody: unknown) {
+  async verifyQrPass(@Body() rawBody: unknown, @Req() req: Request) {
+    const ip = req.ip || 'unknown-ip';
+    this.rateLimiter.assertLimit(`verify-qr-pass:${ip}`, 60, 60 * 1000);
+
     const parseResult = VerifyQrPassSchema.safeParse(rawBody);
     if (!parseResult.success) {
       throw new BadRequestException({
@@ -50,3 +55,4 @@ export class IdCardController {
     return { data };
   }
 }
+

@@ -265,4 +265,110 @@ Conversely, closing all roles indiscriminately would terminate system administra
 - Full preservation of student extracurricular dossiers and verifiable credentials.
 - Total immutability of historical snapshots for institutional reporting.
 
+---
+
+## ADR-009: DPDP Technical Privacy Controls, Photo Consent Gating, and Rolling IP Presentation Anonymization (Module M18)
+
+### Status
+Accepted `[DEFAULT]`
+
+### Context
+The Digital Personal Data Protection (DPDP) Act 2023 mandates technical controls for notice, explicit consent, purpose limitation, data minimization, and retention limits.
+Photographs of students are identifiable personal data that must not be published or displayed without explicit consent.
+Additionally, while `docs/DATA_INVENTORY.md` requires rolling 90-day retention for client IP addresses (`PRIV-06`), PostgreSQL trigger `audit_log_immutable_trigger` strictly prohibits `UPDATE`, `DELETE`, and `TRUNCATE` operations on `audit_log`, making direct physical database row modification illegal by design.
+
+### Decision
+1. **Explicit Photo Consent Tracking:**
+   - Add database column `users.photo_consent` (default `false`) via reversible migration `20261108000000_photo_consent`.
+   - Gate photo serialization in `UsersService`: if `user.photoConsent === false`, return `photo: null` on public, roster, and member profile endpoints.
+   - Provide `PATCH /api/users/:id/photo-consent` enabling members to toggle their consent status, or administrators holding `ROSTER_MANAGE` permission.
+2. **Audit Log Presentation Anonymization:**
+   - Maintain the physical tamper-evident immutability of the PostgreSQL `audit_log` table by keeping the append-only trigger intact.
+   - Enforce the 90-day retention policy (`PRIV-06`) at the service read tier (`AuditLogsService.findAll`): IP addresses recorded on rows with `createdAt` older than 90 days are dynamically transformed into `[ANONYMIZED]`.
+   - This reconciles statutory privacy retention requirements with forensic ledger non-repudiation without circumventing database trigger security controls.
+
+### Consequences
+- Full technical compliance with DPDP consent and minimization principles.
+- Zero unconsented photograph exposure across public or authenticated rosters.
+- Forensic audit integrity is strictly preserved at the physical database layer.
+
+---
+
+## ADR-010: Automated Multi-Entity Retention Purging and Concluded Guest Anonymization (Module M18)
+
+### Status
+Accepted `[DEFAULT]`
+
+### Context
+In accordance with `PRIV-01` / `AUD-PRIV-01`, temporary tokens and expired sessions accumulate indefinitely in the database without automated background cleanup. Furthermore, guest attendees at public events provide personal data (name, email, phone) that must not be retained indefinitely once events conclude and reporting cycles lapse.
+
+### Decision
+1. **RetentionService Implementation:**
+   - Created dedicated `RetentionService` in `apps/api/src/modules/maintenance/`.
+   - Automated purging executes:
+     - `sessions` where `expiresAt < now`.
+     - `verification_tokens` where `expiresAt < now`.
+     - `password_reset_tokens` where `expiresAt < now`.
+     - `idempotency_keys` where `expiresAt < now`.
+     - Anonymization of `event_guests` for events that concluded more than 90 days ago: sets `name = '[ANONYMIZED]'`, `email = 'anonymized_<id>@redacted.local'`, `phone = null`.
+2. **Audited Maintenance Execution:**
+   - Exposed `POST /api/admin/maintenance/retention/purge` guarded by `@RequirePermission(PermissionCode.AUDIT_VIEW)` and executive roles.
+   - Records an immutable audit log entry (`RETENTION_PURGE_EXECUTED`) logging purged and anonymized record counts in `afterJson`.
+
+### Consequences
+- Continuous minimization of personal data footprint.
+- Database indexes and storage overhead remain tightly bounded.
+- Guest privacy protected following event completion.
+
+---
+
+## ADR-011: Cryptographic Integrity Verification vs Institutional X.509 PAdES Digital Signatures (Module M18)
+
+### Status
+Accepted `[DECIDED]`
+
+### Context
+Audit finding `M14-AUD-01` noted that while Module M14 generated tamper-evident activity passports and certificates with embedded Crockford Base32 verification codes and SHA-256 database checksums, it did not apply asymmetric X.509 PAdES (PDF Advanced Electronic Signatures) signed with a private key.
+
+### Decision
+1. **Refusal of Ad-Hoc Mock Keys:**
+   - Generating an ad-hoc, self-signed local certificate in code provides zero legal non-repudiation and produces untrusted certificate warnings in PDF viewers (Adobe Acrobat, PDF-XChange).
+   - Under Section 5 of the Information Technology Act, 2000 (India), legal electronic signatures require a digital signature certificate issued by a licensed Certifying Authority (e.g., eMudhra, Capricorn, NIC) tied to institutional signer identity, with private keys secured in a FIPS 140-2 Level 3 Hardware Security Module (HSM).
+2. **Phase 4 & Phase 5 Architecture Baseline:**
+   - Formalize SHA-256 tamper-evident integrity binding as the authoritative, verified Phase 4 and Phase 5 standard:
+     - Every generated PDF has its SHA-256 checksum recorded in the database.
+     - Downloads verify on-disk hash against database hash, failing closed with 409 Conflict if tampered (`AUD-CERT-01`).
+     - Public verification routes compare verification code hashes in constant time and display issuance metadata.
+   - Document institutional PKI integration boundary (`signDossier`) as an external enterprise adapter requiring institutional procurement of an e-Sign / HSM service.
+
+### Consequences
+- Eliminates false security illusions from invalid self-signed certs.
+- Clear separation between application-level data integrity and institutional legal PKI infrastructure.
+
+---
+
+## ADR-012: Supply Chain Defense-in-Depth and Controlled Risk Acceptance for Zod GHSA-mrhx-c7xc-m3w5 (Module M18)
+
+### Status
+Accepted `[DECIDED]`
+
+### Context
+`npm audit --omit=dev` flags advisory [GHSA-mrhx-c7xc-m3w5](https://github.com/advisories/GHSA-mrhx-c7xc-m3w5) in `zod@3.24.2`. The advisory concerns memory exhaustion caused by uncontrolled schema parsing of recursively nested objects. The upstream fix exists only in `zod@4.x`, which introduces major breaking API changes that would require rewriting every schema in `@csi/shared`, `@csi/api`, and `@csi/web`.
+
+### Decision
+1. **Multi-Layer Defense-in-Depth:**
+   - Enforce strict upstream payload size limits in NestJS/Express: `1 MB` ceiling on JSON request bodies (`express.json({ limit: '1mb' })`).
+   - Limit multipart file uploads to `10 MB` with binary magic byte validation.
+   - Enforce bounded string lengths (`.max()`) and bounded array collections across all `@csi/shared` schemas.
+   - Enforce sliding-window rate limiting on all public, auth, and upload endpoints.
+2. **CI Audit Policy:**
+   - Accept `GHSA-mrhx-c7xc-m3w5` as a managed risk with verified defense-in-depth boundaries.
+   - Configure CI dependency checking as `npm audit --omit=dev --audit-level=critical`.
+   - Track full Zod 4 migration as future major architectural lifecycle work.
+
+### Consequences
+- Production build and CI gates remain reliable and unblocked.
+- Effective immunity from memory exhaustion vectors via payload size ceilings.
+
+
 

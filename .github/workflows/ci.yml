@@ -84,6 +84,24 @@ jobs:
       - name: Run unit & integration test suites
         run: npm run test
 
+      # AUD-CI-01: Venue exclusion constraint verification
+      - name: Venue exclusion constraint test
+        env:
+          DATABASE_URL: postgresql://csi_app:ci_test_app_pass@localhost:5432/csi_gcet_test
+        run: npx tsx scripts/validation/test-venue-exclusion.ts
+
+      # AUD-CI-01: Complete API E2E test suite against native PostgreSQL
+      - name: Run E2E test suite
+        env:
+          NODE_ENV: test
+          DATABASE_URL: postgresql://csi_app:ci_test_app_pass@localhost:5432/csi_gcet_test
+          MIGRATION_DATABASE_URL: postgresql://csi_migrator:ci_test_migrator_pass@localhost:5432/csi_gcet_test
+          SESSION_SECRET: ci_session_secret_at_least_32_characters_long_12345
+          CSRF_SECRET: ci_csrf_secret_at_least_32_characters_long_12345
+          APP_ENCRYPTION_KEY: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+          STORAGE_ROOT_DIR: /tmp/csi-storage
+        run: npm run test:e2e --prefix apps/api
+
       - name: Build monorepo
         env:
           NODE_ENV: production

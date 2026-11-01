@@ -43,6 +43,7 @@ model User {
   branch          String?          @db.VarChar(50)
   year            Int?
   photo           String?          @db.VarChar(255)
+  photoConsent    Boolean          @default(false) @map("photo_consent")
   status          String           @default("pending") @db.VarChar(20)
   passwordHash    String           @map("password_hash") @db.VarChar(255)
   createdAt       DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)

@@ -1,11 +1,15 @@
 import { HttpException, HttpStatus } from '@nestjs/common';
 import { RateLimiterService } from '../../../../../apps/api/src/common/services/rate-limiter.service.js';
 
-describe('RateLimiterService (SEC-05, SEC-06)', () => {
+describe('RateLimiterService (SEC-05, SEC-06, AUD-PERF-01)', () => {
   let service: RateLimiterService;
 
   beforeEach(() => {
     service = new RateLimiterService();
+  });
+
+  afterEach(() => {
+    service.onModuleDestroy();
   });
 
   it('allows requests within threshold', () => {
@@ -40,5 +44,17 @@ describe('RateLimiterService (SEC-05, SEC-06)', () => {
 
     service.reset('ip-reset');
     expect(() => service.assertLimit('ip-reset', 1, 10000)).not.toThrow();
+  });
+
+  it('evicts expired keys and prevents unbounded in-memory store growth (AUD-PERF-01)', () => {
+    // Add two keys
+    service.assertLimit('stale-key-1', 5, 1000);
+    service.assertLimit('stale-key-2', 5, 1000);
+    expect(service.getStoreSize()).toBe(2);
+
+    // Evict keys with age threshold of -1 ms (all existing records are older)
+    const evicted = service.evictExpired(-1);
+    expect(evicted).toBe(2);
+    expect(service.getStoreSize()).toBe(0);
   });
 });

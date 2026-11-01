@@ -8,6 +8,8 @@ import {
 import { PrismaService } from '../../infra/prisma/prisma.service.js';
 import { IdCardService } from '../id-card/id-card.service.js';
 import { generateBase32Secret, generateTotp, verifyTotp } from '../../common/crypto/totp.js';
+import { encryptAes256Gcm, decryptAes256Gcm } from '../../common/crypto/encryption.js';
+import { env } from '../../config/env.js';
 import {
   AttendanceAudience,
   AttendanceMethod,
@@ -52,7 +54,8 @@ export class AttendanceService {
       });
     }
 
-    const totpSecret = generateBase32Secret(20);
+    const plainSecret = generateBase32Secret(20);
+    const totpSecret = encryptAes256Gcm(plainSecret, env.APP_ENCRYPTION_KEY);
 
     const session = await this.prisma.attendanceSession.create({
       data: {
@@ -134,7 +137,8 @@ export class AttendanceService {
       });
     }
 
-    const currentTotpCode = generateTotp(session.totpSecret, session.totpStepSeconds);
+    const plainSecret = decryptAes256Gcm(session.totpSecret, env.APP_ENCRYPTION_KEY);
+    const currentTotpCode = generateTotp(plainSecret, session.totpStepSeconds);
 
     return {
       ...this.mapSession(session),
@@ -308,9 +312,10 @@ export class AttendanceService {
     }
 
     // 1. Verify TOTP code (accept current step +/- 1 step)
+    const plainSecret = decryptAes256Gcm(session.totpSecret, env.APP_ENCRYPTION_KEY);
     const isCodeValid = verifyTotp(
       input.totp_code,
-      session.totpSecret,
+      plainSecret,
       session.totpStepSeconds,
       1,
     );
@@ -567,26 +572,43 @@ export class AttendanceService {
         // 3. Clock skew verification (flag if client marked at > 24 hours drift)
         const diffMs = Math.abs(now.getTime() - clientMarkedAt.getTime());
         if (diffMs > 24 * 60 * 60 * 1000) {
-          const rec = await this.prisma.attendanceRecord.create({
-            data: {
-              sessionId: session.id,
-              eventId: session.eventId,
-              subjectType: RecipientType.MEMBER,
-              subjectId: op.member_id || '00000000-0000-0000-0000-000000000000',
-              method: op.method,
-              status: AttendanceStatus.FLAGGED_CONFLICT,
-              clientUuid: op.client_uuid,
-              clientMarkedAt,
-              verifiedAt: now,
-              markedById,
-              notes: `Clock skew warning: Client timestamp deviated by ${Math.round(diffMs / 60000)} minutes.`,
-            },
-          });
+          let recId: string | undefined;
+          if (op.member_id) {
+            const existingSkew = await this.prisma.attendanceRecord.findUnique({
+              where: {
+                session_subject_unique: {
+                  sessionId: session.id,
+                  subjectType: RecipientType.MEMBER,
+                  subjectId: op.member_id,
+                },
+              },
+            });
+            if (existingSkew) {
+              recId = existingSkew.id;
+            } else {
+              const created = await this.prisma.attendanceRecord.create({
+                data: {
+                  sessionId: session.id,
+                  eventId: session.eventId,
+                  subjectType: RecipientType.MEMBER,
+                  subjectId: op.member_id,
+                  method: op.method,
+                  status: AttendanceStatus.FLAGGED_CONFLICT,
+                  clientUuid: op.client_uuid,
+                  clientMarkedAt,
+                  verifiedAt: now,
+                  markedById,
+                  notes: `Clock skew warning: Client timestamp deviated by ${Math.round(diffMs / 60000)} minutes.`,
+                },
+              });
+              recId = created.id;
+            }
+          }
           results.push({
             client_uuid: op.client_uuid,
             status: AttendanceStatus.FLAGGED_CONFLICT,
             message: 'Client clock skew exceeded tolerance window.',
-            record_id: rec.id,
+            record_id: recId,
           });
           conflictCount++;
           continue;
@@ -608,9 +630,10 @@ export class AttendanceService {
           }
           targetMemberId = qrRes.user_id;
         } else if (op.method === AttendanceMethod.ROTATING_CODE) {
+          const plainSecret = decryptAes256Gcm(session.totpSecret, env.APP_ENCRYPTION_KEY);
           const isTotpValid = verifyTotp(
             op.payload,
-            session.totpSecret,
+            plainSecret,
             session.totpStepSeconds,
             2,
             clientMarkedAt.getTime(),
@@ -648,26 +671,11 @@ export class AttendanceService {
         });
 
         if (existingSessionRecord) {
-          const rec = await this.prisma.attendanceRecord.create({
-            data: {
-              sessionId: session.id,
-              eventId: session.eventId,
-              subjectType: RecipientType.MEMBER,
-              subjectId: targetMemberId,
-              method: op.method,
-              status: AttendanceStatus.FLAGGED_CONFLICT,
-              clientUuid: op.client_uuid,
-              clientMarkedAt,
-              verifiedAt: now,
-              markedById,
-              notes: 'Duplicate check-in detected during offline sync reconciliation.',
-            },
-          });
           results.push({
             client_uuid: op.client_uuid,
             status: AttendanceStatus.FLAGGED_CONFLICT,
-            message: 'Duplicate check-in attempt recorded.',
-            record_id: rec.id,
+            message: 'Duplicate check-in detected during offline sync reconciliation.',
+            record_id: existingSessionRecord.id,
           });
           conflictCount++;
           continue;
