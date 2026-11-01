@@ -21,6 +21,8 @@ This document tracks all recognized security, operational, architectural, and da
 | **RR:SEC-11** | **P1** | Log data leaks exposing student PII or session tokens | Automatic pino redaction for `password`, `token`, `cookie`, `authorization`, `phone`, `email` | Pino redaction unit tests; SEC-24 |
 | **RR:SEC-12** | **P1** | False claims of legal or regulatory compliance | Prohibition of unsupported claims ("DPDP compliant", "fully secure", "unhackable") | `check:content` scanner; PRIV-13 |
 | **RR:SEC-13** | **P1** | Issuance or download of corrupted, tampered, or unverifiable certificates | Fail-safe handling on missing or corrupt files (AUD-CERT-01); strict SHA-256 integrity verification against database hash; zero unverified dynamic PDF regeneration; HTTP 409 Conflict with sanitized logging | `certificate-batch.service.spec.ts`, `certificate-batch.e2e-spec.ts` |
+| **RR:SEC-14** | **P1** | Activity Passport tampering, unauthorized dossier generation, or unverified record padding | Pure-JS deterministic vector PDF generation; verified event attendance prerequisite; fail-safe file handling (409 on missing or tampered file); immutable SHA-256 hash matching; IDOR-protected user and admin endpoints | `passport-export.service.spec.ts`, `passports.e2e-spec.ts` |
+| **RR:SEC-15** | **P1** | Student PII leakage or credential enumeration via public passport verification | Privacy-preserving public schema returning only verified summary counts and non-sensitive metadata (zero email, phone, enrollment numbers, or database UUIDs); sliding-window IP rate limiting (30 req/min per IP) | `passport-verification.service.spec.ts`, `passports.e2e-spec.ts` |
 
 ---
 

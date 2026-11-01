@@ -7,13 +7,23 @@ import { apiClient, ApiError } from '@/lib/api-client';
 interface PublicVerificationResponse {
   status: 'valid' | 'revoked' | 'integrity_mismatch' | 'not_found' | 'invalid';
   isAuthentic: boolean;
+  credentialType?: 'certificate' | 'passport';
   certificateNumber?: string;
   certificateType?: string;
+  passportNumber?: string;
+  studentName?: string;
   recipientName?: string;
   eventName?: string;
   issueDate?: string;
   issuedAt?: string;
+  generatedAt?: string;
   issuingInstitution?: string;
+  summaryCounts?: {
+    eventsAttended: number;
+    certificatesEarned: number;
+    committeeTenures: number;
+    totalActivities?: number;
+  };
   revokedAt?: string;
   revocationReason?: string;
   message?: string;
@@ -39,9 +49,23 @@ export default function CertificateVerificationPage({
       setErrorMsg(null);
 
       try {
-        const result = await apiClient.get<PublicVerificationResponse>(
+        let result = await apiClient.get<PublicVerificationResponse>(
           `/verify/${encodeURIComponent(rawCode)}`,
         );
+
+        if (result.status === 'not_found') {
+          try {
+            const passportResult = await apiClient.get<PublicVerificationResponse>(
+              `/passports/verify/${encodeURIComponent(rawCode)}`,
+            );
+            if (passportResult.status !== 'not_found') {
+              result = passportResult;
+            }
+          } catch {
+            // Keep certificate not_found
+          }
+        }
+
         if (isMounted) {
           setData(result);
         }
@@ -134,7 +158,7 @@ export default function CertificateVerificationPage({
           </div>
         )}
 
-        {/* State 3: Valid and Authentic Certificate */}
+        {/* State 3: Valid and Authentic Certificate or Passport */}
         {!loading && !errorMsg && data?.status === 'valid' && (
           <div className="bg-surface border border-border rounded-lg shadow-sm overflow-hidden">
             {/* Authentic Header Banner */}
@@ -144,53 +168,75 @@ export default function CertificateVerificationPage({
                 Officially Verified & Authentic
               </div>
               <h1 className="text-2xl sm:text-3xl font-display font-bold text-text">
-                CSI GCET Certificate of {data.certificateType?.toUpperCase()}
+                {data.credentialType === 'passport' || data.passportNumber
+                  ? 'Student Activity Passport & Dossier'
+                  : `CSI GCET Certificate of ${data.certificateType?.toUpperCase()}`}
               </h1>
               <p className="text-xs text-text-muted mt-1">
                 Issued by {data.issuingInstitution || 'Computer Society of India - GCET Student Branch'}
               </p>
             </div>
 
-            {/* Certificate Details Grid */}
+            {/* Details Grid */}
             <div className="p-6 sm:p-8 space-y-6">
               <div className="border border-border rounded-md p-5 bg-surface-raised/40">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <span className="text-xs font-semibold text-text-muted uppercase tracking-wider block">
-                      Recipient
+                      Recipient / Student
                     </span>
                     <span className="text-lg font-bold text-text block mt-0.5">
-                      {data.recipientName}
+                      {data.studentName || data.recipientName}
                     </span>
                   </div>
 
                   <div>
                     <span className="text-xs font-semibold text-text-muted uppercase tracking-wider block">
-                      Event / Activity
+                      {data.credentialType === 'passport' || data.passportNumber ? 'Credential Type' : 'Event / Activity'}
                     </span>
                     <span className="text-base font-semibold text-text block mt-0.5">
-                      {data.eventName}
+                      {data.credentialType === 'passport' || data.passportNumber
+                        ? 'Official Extracurricular Dossier'
+                        : data.eventName}
                     </span>
                   </div>
 
                   <div>
                     <span className="text-xs font-semibold text-text-muted uppercase tracking-wider block">
-                      Issue Date
+                      {data.credentialType === 'passport' || data.passportNumber ? 'Generation Date' : 'Issue Date'}
                     </span>
                     <span className="text-sm font-medium text-text block mt-0.5">
-                      {data.issueDate}
+                      {data.generatedAt ? new Date(data.generatedAt).toLocaleDateString() : data.issueDate}
                     </span>
                   </div>
 
                   <div>
                     <span className="text-xs font-semibold text-text-muted uppercase tracking-wider block">
-                      Certificate Serial
+                      {data.credentialType === 'passport' || data.passportNumber ? 'Passport Reference' : 'Certificate Serial'}
                     </span>
                     <span className="text-sm font-mono font-medium text-text block mt-0.5">
-                      {data.certificateNumber}
+                      {data.passportNumber || data.certificateNumber}
                     </span>
                   </div>
                 </div>
+
+                {/* Passport Summary Counts if present */}
+                {data.summaryCounts && (
+                  <div className="mt-4 pt-4 border-t border-border grid grid-cols-3 gap-2 text-center">
+                    <div className="bg-surface p-2 rounded border border-border">
+                      <div className="text-base font-bold text-primary">{data.summaryCounts.eventsAttended}</div>
+                      <div className="text-[11px] text-text-muted">Events Attended</div>
+                    </div>
+                    <div className="bg-surface p-2 rounded border border-border">
+                      <div className="text-base font-bold text-primary">{data.summaryCounts.certificatesEarned}</div>
+                      <div className="text-[11px] text-text-muted">Credentials Earned</div>
+                    </div>
+                    <div className="bg-surface p-2 rounded border border-border">
+                      <div className="text-base font-bold text-primary">{data.summaryCounts.committeeTenures}</div>
+                      <div className="text-[11px] text-text-muted">Committee Tenures</div>
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Cryptographic Security Details */}

@@ -17,6 +17,11 @@ This document registers every personal data field stored, processed, or transmit
 | `attendance.verified_by` | Auditability of attendance check-in coordinator | Accountability and anti-fraud | Retained with attendance record | Admin, President/VP |
 | `audit_log.ip` | Detection of brute force, credential stuffing, and session hijacking | Security defense & incident response (CERT-In / SEC-24) | Rolling 90 days `[ASK] Q21` | Admin (`audit.view` only) |
 | `audit_log.actor_id` | Accountability for privileged administrative mutations | Security integrity & auditability | Permanent append-only ledger | Admin (`audit.view` only) |
+| `passports.user_id` | Reference to student recipient for dossier compilation | Essential for activity passport generation | Retained during active student enrollment + 3 academic years | Self, Admin (`export.data`) |
+| `passports.passport_number` | Unique identifier for placement and academic credentialing | Legitimate educational and career credentialing | Retained with passport record | Self, Admin, Public Verification |
+| `passports.verification_code_hash` | SHA-256 hash of Crockford Base32 verification code | Cryptographic anti-forgery validation | Retained with passport record | Application internal only (never exposed) |
+| `passports.summary_json` | Snapshot of verified participation metrics at time of export | Verifiable record of extracurricular contributions | Retained with passport record | Self, Admin, Public Verification |
+| `passports.file_hash` | Cryptographic SHA-256 checksum of generated PDF | Tamper detection and dossier integrity verification | Retained with passport record | Application internal only |
 
 ---
 
@@ -37,4 +42,5 @@ In adherence to Hard Rule 20 and PRIV-05, the following data categories are **st
 - **Redaction in Application Logs (SEC-24):** All passwords, session tokens, CSRF tokens, authorization headers, phone numbers, and email addresses are automatically masked or redacted before reaching pino logger outputs.
 - **Audit Minimization (PRIV-12):** `audit_log.before_json` and `after_json` never store raw passwords, password hashes, or token secrets.
 - **Certificate Verification (PRIV-10):** Public verification pages (`/verify/:id`) display only the certificate recipient's name, event title, and issue date. Private contact details (email, phone, enrollment number) are never exposed on public URLs.
+- **Activity Passport Verification (PRIV-14):** Public passport verification endpoints (`/passports/verify/:code` and `/verify/:code`) display strictly verified participation counts, student full name, passport number, and issuance date. Student contact information (email, phone), institutional enrollment numbers, and internal database/storage paths are redacted and never returned.
 

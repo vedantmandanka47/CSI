@@ -51,6 +51,7 @@ async function runMigrationTest() {
     'idempotency_keys',
     'certificate_batches',
     'certificates',
+    'passports',
   ];
 
   try {

@@ -78,3 +78,37 @@ Section 7.7 defines a strict motion policy for application screens (interactions
 - Rich, distinctive landing page experience without degrading device performance.
 - Full respect for user accessibility preferences and vestibular comfort.
 
+---
+
+## ADR-004: Student Activity Passport & Extracurricular Dossier Architecture (Module M14)
+
+### Status
+Accepted `[DEFAULT]`
+
+### Context
+Students require a consolidated, tamper-evident extracurricular passport compiling verified event attendance, earned certificates, and committee leadership roles for placements and higher education. The system must guarantee integrity, prevent IDOR vulnerabilities, protect student privacy upon public verification, and operate reliably without external heavy headless browser runtimes.
+
+### Decision
+1. **Activity Aggregation Integrity:**
+   - **Events:** Included only when an `AttendanceRecord` exists with `status = 'verified'`. Unverified registrations (`Registration` alone) are strictly excluded. Multiple sessions of the same event are deduplicated.
+   - **Certificates:** Included only when a `Certificate` has `status = 'generated'`. Revoked certificates are excluded. Files missing from disk are flagged with `certificateFileAvailable = false` to prevent broken download links.
+   - **Committee Tenures:** Included when `RoleAssignment` has an assigned `committeeId` or a recognized leadership role (`core`, `subcore`, `committee`, `lead`, `head`, `chair`, `president`, `vp`). General membership (`RoleCode.MEMBER` with `committeeId = null`) is excluded from committee counts.
+2. **Fail-Safe File Handling (AUD-CERT-01 Pattern):**
+   - On download (`GET /api/me/passport/download` or `GET /api/passports/download/:id`), if the physical PDF file is absent from disk, the system throws HTTP 409 Conflict (`PASSPORT_FILE_UNAVAILABLE`) rather than regenerating an unverified document.
+   - If the disk file SHA-256 hash differs from the database record, the system throws HTTP 409 Conflict (`PASSPORT_INTEGRITY_MISMATCH`).
+3. **Pure Vector PDF Generation:**
+   - Generated entirely in Node.js via `pdf-lib` and `qrcode` (zero Puppeteer/headless Chrome runtime dependencies).
+   - Fonts use standard PDF Helvetica with WinAnsi character safety (avoiding unencodable Unicode symbols by using vector `drawCircle` geometric markers and ASCII dividers).
+   - Layout supports dynamic multi-page flow, running page numbers (`Page X of Y`), student profile cards, metric summaries, and high-resolution Crockford Base32 verification badge.
+4. **Cryptographic Verification & Privacy Preservation:**
+   - Verification codes use 16-character Crockford Base32 (80 bits of cryptographic entropy) formatted as `XXXX-XXXX-XXXX-XXXX`.
+   - The database stores only the deterministic SHA-256 hash (`verification_code_hash VARCHAR(64) UNIQUE`).
+   - Public verification endpoints (`GET /api/passports/verify/:code` and `/api/verify/:code`) return only status (`valid`, `revoked`, `integrity_mismatch`, `not_found`, `invalid`), verified counts, student name, issue date, and branch. Internal UUIDs, email, phone, enrollment numbers, and storage paths are never leaked.
+   - Public endpoints are guarded by a sliding-window IP rate limiter (30 req/min per IP).
+
+### Consequences
+- Complete, tamper-evident extracurricular dossiers acceptable to recruiters and accreditation bodies.
+- Zero risk of counterfeit or regenerated mismatch documents.
+- Complete student PII privacy during third-party QR code scanning.
+- Ultra-fast, zero-overhead PDF generation within memory limits.
+
