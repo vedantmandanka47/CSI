@@ -171,14 +171,23 @@ export default function AdminMembersPage() {
           </p>
         </div>
 
-        <Link
-          href="/admin/drives"
-          className="inline-flex items-center gap-2 rounded-md border border-border bg-surface px-4 py-2 text-xs font-semibold text-text shadow-sm transition-colors hover:bg-surface-raised"
-        >
-          <CalendarRange className="h-4 w-4 text-primary" />
-          <span>Manage Drive Windows</span>
-          <ArrowRight className="h-3.5 w-3.5 text-text-muted" />
-        </Link>
+        <div className="flex flex-wrap items-center gap-3">
+          <Link
+            href="/admin/terms"
+            className="inline-flex items-center gap-2 rounded-md border border-border bg-surface px-4 py-2 text-xs font-semibold text-text shadow-sm transition-colors hover:bg-surface-raised"
+          >
+            <CalendarRange className="h-4 w-4 text-primary" />
+            <span>Academic Terms & Rollover</span>
+          </Link>
+          <Link
+            href="/admin/drives"
+            className="inline-flex items-center gap-2 rounded-md border border-border bg-surface px-4 py-2 text-xs font-semibold text-text shadow-sm transition-colors hover:bg-surface-raised"
+          >
+            <CalendarRange className="h-4 w-4 text-primary" />
+            <span>Manage Drive Windows</span>
+            <ArrowRight className="h-3.5 w-3.5 text-text-muted" />
+          </Link>
+        </div>
       </div>
 
       {/* Messages */}

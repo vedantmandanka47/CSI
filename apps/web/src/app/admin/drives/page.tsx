@@ -151,13 +151,20 @@ export default function AdminDrivesPage() {
   return (
     <main className="mx-auto min-h-[calc(100vh-4rem)] max-w-5xl px-4 py-10 sm:px-6 lg:px-8">
       {/* Navigation Breadcrumb */}
-      <div className="mb-6 flex items-center gap-2">
+      <div className="mb-6 flex items-center gap-4 text-xs font-semibold text-text-muted">
         <Link
           href="/admin/members"
-          className="inline-flex items-center gap-1.5 text-xs font-semibold text-text-muted transition-colors hover:text-text"
+          className="inline-flex items-center gap-1.5 transition-colors hover:text-text"
         >
           <ArrowLeft className="h-3.5 w-3.5" />
           <span>Member Applications</span>
+        </Link>
+        <span className="text-border">/</span>
+        <Link
+          href="/admin/terms"
+          className="inline-flex items-center gap-1.5 transition-colors hover:text-text"
+        >
+          <span>Academic Terms & Rollover</span>
         </Link>
       </div>
 

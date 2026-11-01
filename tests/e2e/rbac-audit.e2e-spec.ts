@@ -35,6 +35,9 @@ describe('RBAC & Audit Trail Subsystem (E2E) (ARCH-05, ARCH-06, SEC-23)', () => 
     await assertStrictTestDatabase(prisma);
 
     // Clean tables in reverse dependency order
+    await prisma.termRollover.deleteMany();
+    await prisma.termSnapshot.deleteMany();
+    await prisma.academicTerm.deleteMany();
     await prisma.committeeAsset.deleteMany();
     await prisma.checklistRun.deleteMany();
     await prisma.checklistItem.deleteMany();
@@ -240,6 +243,9 @@ describe('RBAC & Audit Trail Subsystem (E2E) (ARCH-05, ARCH-06, SEC-23)', () => 
   });
 
   afterAll(async () => {
+    await prisma.termRollover.deleteMany();
+    await prisma.termSnapshot.deleteMany();
+    await prisma.academicTerm.deleteMany();
     await prisma.committeeAsset.deleteMany();
     await prisma.checklistRun.deleteMany();
     await prisma.checklistItem.deleteMany();

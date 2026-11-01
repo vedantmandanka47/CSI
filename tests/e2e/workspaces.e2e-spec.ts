@@ -38,6 +38,9 @@ describe('Committee Workspaces & Role-Specific Shells (E2E) (M15)', () => {
     await assertStrictTestDatabase(prisma);
 
     // Clean tables in reverse dependency order
+    await prisma.termRollover.deleteMany();
+    await prisma.termSnapshot.deleteMany();
+    await prisma.academicTerm.deleteMany();
     await prisma.committeeAsset.deleteMany();
     await prisma.checklistRun.deleteMany();
     await prisma.checklistItem.deleteMany();

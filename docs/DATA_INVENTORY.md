@@ -29,6 +29,11 @@ This document registers every personal data field stored, processed, or transmit
 | `committee_assets.uploaded_by_id` | Member ID who uploaded promotional/media asset | Attribution and review workflow | Retained with event history (3 years) | Committee, Executive leadership, Admin |
 | `committee_assets.reviewed_by_id` | Committee lead or executive who approved/rejected asset | Review accountability and publishing governance | Retained with event history (3 years) | Committee, Executive leadership, Admin |
 | `committee_assets.file_hash` | Cryptographic SHA-256 checksum of media file | Binary tamper detection & storage integrity | Retained with asset record | Application internal only |
+| `academic_terms.created_by_id` | Administrator ID who created the academic term | Operational term management accountability | Permanent academic history | Admin, Executive leadership |
+| `term_snapshots.captured_by_id` | Administrator or executive ID who captured snapshot | Auditability of frozen term archive | Permanent historical archive | Admin, Executive leadership |
+| `term_snapshots.snapshot_json` | Immutable JSON freezing closing metrics and roster | Preserving verifiable historical branch achievements | Permanent historical archive | Admin, Executive leadership |
+| `term_rollovers.executed_by_id` | Executive user ID who authorized the transition | Governance accountability and auditability | Permanent historical ledger | Admin, Executive leadership |
+| `term_rollovers.summary_json` | Rollover transaction execution metrics | Audit trail of transitioned roles and workflows | Permanent historical ledger | Admin, Executive leadership |
 
 ---
 
@@ -52,4 +57,5 @@ In adherence to Hard Rule 20 and PRIV-05, the following data categories are **st
 - **Activity Passport Verification (PRIV-14):** Public passport verification endpoints (`/passports/verify/:code` and `/verify/:code`) display strictly verified participation counts, student full name, passport number, and issuance date. Student contact information (email, phone), institutional enrollment numbers, and internal database/storage paths are redacted and never returned.
 - **Committee Workspace Access Minimization (PRIV-15):** Committee workspaces expose only active member rosters (name, email, role, term) and branch events. Private profile details (phone numbers, passwords, hashes, internal storage paths) are not exposed to committee members. Workspace access events are logged in the append-only `audit_log` (`workspace.accessed`).
 - **Operational Task & Asset Minimization (PRIV-16):** Task descriptions, checklists, and asset metadata are restricted to active committee members and executive leadership. Files uploaded to the media repository are sanitized, path-jailed on disk, and verified via SHA-256 without exposing underlying host directory layouts to clients. All modifications are tracked in the append-only `audit_log`.
+- **Annual Term Rollover & Archival Minimization (PRIV-17):** Historical term snapshots freeze closing roster appointments (name, email, role, committee) and operational metrics at the instant of term archival. Sensitive personal attributes (passwords, phone numbers, enrollment numbers, personal identifiers) are omitted from snapshots. Rollover execution records are immutable and queryable strictly by authorized branch executives (`ROSTER_MANAGE`).
 

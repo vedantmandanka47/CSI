@@ -20,3 +20,5 @@ export * from './workspace.schema.js';
 export * from './task.schema.js';
 export * from './checklist.schema.js';
 export * from './asset.schema.js';
+export * from './term.schema.js';
+export * from './rollover.schema.js';

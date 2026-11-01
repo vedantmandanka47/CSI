@@ -26,6 +26,9 @@ describe('Auth & Session Subsystem (E2E) (ARCH-05, ARCH-14, SEC-04, SEC-05, SEC-
     await assertStrictTestDatabase(prisma);
 
     // Clean test database tables in reverse dependency order
+    await prisma.termRollover.deleteMany();
+    await prisma.termSnapshot.deleteMany();
+    await prisma.academicTerm.deleteMany();
     await prisma.committeeAsset.deleteMany();
     await prisma.checklistRun.deleteMany();
     await prisma.checklistItem.deleteMany();
@@ -266,6 +269,9 @@ describe('Auth & Session Subsystem (E2E) (ARCH-05, ARCH-14, SEC-04, SEC-05, SEC-
   });
 
   afterAll(async () => {
+    await prisma.termRollover.deleteMany();
+    await prisma.termSnapshot.deleteMany();
+    await prisma.academicTerm.deleteMany();
     await prisma.committeeAsset.deleteMany();
     await prisma.checklistRun.deleteMany();
     await prisma.checklistItem.deleteMany();

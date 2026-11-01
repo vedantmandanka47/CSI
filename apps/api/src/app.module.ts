@@ -23,6 +23,7 @@ import { VenuesModule } from './modules/venues/venues.module.js';
 import { CertificatesModule } from './modules/certificates/certificates.module.js';
 import { PassportsModule } from './modules/passports/passports.module.js';
 import { WorkspacesModule } from './modules/workspaces/workspaces.module.js';
+import { TermsModule } from './modules/terms/terms.module.js';
 import { PrismaModule } from './infra/prisma/prisma.module.js';
 
 @Module({
@@ -76,6 +77,7 @@ import { PrismaModule } from './infra/prisma/prisma.module.js';
     CertificatesModule,
     PassportsModule,
     WorkspacesModule,
+    TermsModule,
     PrismaModule,
   ],
   providers: [

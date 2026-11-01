@@ -47,6 +47,9 @@ describe('Tasks, Checklists & Asset Workflows (E2E) (M16)', () => {
     await assertStrictTestDatabase(prisma);
 
     // Clean tables in reverse dependency order
+    await prisma.termRollover.deleteMany();
+    await prisma.termSnapshot.deleteMany();
+    await prisma.academicTerm.deleteMany();
     await prisma.committeeAsset.deleteMany();
     await prisma.checklistRun.deleteMany();
     await prisma.checklistItem.deleteMany();
@@ -518,6 +521,9 @@ describe('Tasks, Checklists & Asset Workflows (E2E) (M16)', () => {
   });
 
   afterAll(async () => {
+    await prisma.termRollover.deleteMany();
+    await prisma.termSnapshot.deleteMany();
+    await prisma.academicTerm.deleteMany();
     await prisma.committeeAsset.deleteMany();
     await prisma.checklistRun.deleteMany();
     await prisma.checklistItem.deleteMany();

@@ -53,6 +53,9 @@ describe('Certificate Verification & Cryptographic Anti-Forgery Subsystem (E2E) 
     await assertStrictTestDatabase(prisma);
 
     // Clean tables in reverse dependency order
+    await prisma.termRollover.deleteMany();
+    await prisma.termSnapshot.deleteMany();
+    await prisma.academicTerm.deleteMany();
     await prisma.committeeAsset.deleteMany();
     await prisma.checklistRun.deleteMany();
     await prisma.checklistItem.deleteMany();
@@ -239,6 +242,9 @@ describe('Certificate Verification & Cryptographic Anti-Forgery Subsystem (E2E) 
 
   afterAll(async () => {
     if (prisma) {
+      await prisma.termRollover.deleteMany();
+      await prisma.termSnapshot.deleteMany();
+      await prisma.academicTerm.deleteMany();
       await prisma.committeeAsset.deleteMany();
       await prisma.checklistRun.deleteMany();
       await prisma.checklistItem.deleteMany();

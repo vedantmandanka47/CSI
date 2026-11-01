@@ -225,4 +225,44 @@ Ad-hoc file uploads and unverified checklists present severe security risks: mal
 - Strict anti-malware and file spoofing protection on all media assets.
 - Immutable accountability for pre-event operational checklist sign-offs.
 
+---
+
+## ADR-008: Annual Committee Term Rollover, Historical Snapshot Preservation, and Alumnus Transition (Module M17)
+
+### Status
+Accepted `[DEFAULT]`
+
+### Context
+Student branch leadership and volunteer appointments transition annually at the end of each academic term (e.g. June 1 to May 31).
+A naive rollover mechanism that simply overwrites committee memberships or wipes past tasks would destroy historical tenure records, corrupt student activity passports, and leave outgoing student leaders with active privileged access.
+Conversely, closing all roles indiscriminately would terminate system administrator (`ADMIN`) and permanent faculty advisor (`FACULTY`) access, locking administrators out of the platform.
+
+### Decision
+1. **Academic Term Calendar Model:**
+   - Dedicated `academic_terms` table with `draft`, `active`, and `archived` statuses, strict boundary validation (`startDate < endDate`), and a single `isCurrent = true` pointer.
+   - Deletion of active or referenced terms is strictly prohibited (HTTP 400).
+2. **Two-Stage Controlled Rollover Workflow:**
+   - **Stage 1 (Preview & Health Check):** `POST /api/admin/rollover/preview` performs an audit without side effects: identifying outgoing committee appointments, identifying graduating 4th-year members, auditing unresolved workflows (open tasks, in-progress checklists, pending media assets), pre-validating incoming board appointments, and generating a unique confirmation safety code.
+   - **Stage 2 (Atomic Execution):** `POST /api/admin/rollover/execute` executes inside a single database transaction (`$transaction`):
+     - Closes outgoing student committee appointments (`termEnd = now`), immediately revoking active workspace privileges (`COMMITTEE_TENURE_EXPIRED`).
+     - **Preservation of Permanent Governance:** Excludes `ADMIN` and `FACULTY` role codes from tenure termination (`roleId NOT IN (excludedRoleIds)`), ensuring unbroken system oversight across academic terms.
+     - Optionally transitions verified graduating 4th-year students (`year >= 4`) to `UserStatus.GRADUATED`.
+     - Optionally archives unresolved committee tasks to `cancelled` status.
+     - Captures an immutable `term_snapshots` record freezing audit metrics (events, attendance, certificates, passports, tasks, assets) and the complete closing roster.
+     - Seats incoming board appointments with `termStart = toTerm.startDate` and `termEnd = toTerm.endDate`.
+     - Archives the outgoing term (`status = 'archived'`, `isCurrent = false`, `archivedAt = now`) and sets target term (`status = 'active'`, `isCurrent = true`).
+     - Records `term_rollovers` execution metadata and writes an append-only audit log entry (`term.rollover_executed`).
+3. **Safety & Idempotency Safeguards:**
+   - Requires explicit typed confirmation code matching `CONFIRM_ROLLOVER_<TO_TERM_CODE>`.
+   - Rejects duplicate rollovers or transitions into archived terms with HTTP 409 Conflict (`ROLLOVER_ALREADY_EXECUTED`).
+4. **Historical Record Preservation:**
+   - Zero cascading deletion of past events, registrations, attendance records, certificates, passports, or tasks during rollover.
+   - Historical records remain queryable through snapshots and activity dossiers without polluting active operational workspaces.
+
+### Consequences
+- Completely safe, atomic transition between outgoing and incoming student leadership teams.
+- Zero risk of locking administrators out of the platform.
+- Full preservation of student extracurricular dossiers and verifiable credentials.
+- Total immutability of historical snapshots for institutional reporting.
+
 

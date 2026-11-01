@@ -41,6 +41,9 @@ describe('Student Activity Passport & Extracurricular Dossier (E2E) (M14)', () =
     await assertStrictTestDatabase(prisma);
 
     // Clean tables in reverse dependency order
+    await prisma.termRollover.deleteMany();
+    await prisma.termSnapshot.deleteMany();
+    await prisma.academicTerm.deleteMany();
     await prisma.committeeAsset.deleteMany();
     await prisma.checklistRun.deleteMany();
     await prisma.checklistItem.deleteMany();
@@ -604,6 +607,9 @@ describe('Student Activity Passport & Extracurricular Dossier (E2E) (M14)', () =
   });
 
   afterAll(async () => {
+    await prisma.termRollover.deleteMany();
+    await prisma.termSnapshot.deleteMany();
+    await prisma.academicTerm.deleteMany();
     await prisma.committeeAsset.deleteMany();
     await prisma.checklistRun.deleteMany();
     await prisma.checklistItem.deleteMany();
