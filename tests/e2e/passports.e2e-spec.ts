@@ -16,6 +16,7 @@ describe('Student Activity Passport & Extracurricular Dossier (E2E) (M14)', () =
 
   let studentAId: string;
   let studentASessionCookie: string;
+  let studentBId: string;
   let studentBSessionCookie: string;
   let adminUserId: string;
   let adminSessionCookie: string;
@@ -130,6 +131,7 @@ describe('Student Activity Passport & Extracurricular Dossier (E2E) (M14)', () =
         passwordHash: dummyPasswordHash,
       },
     });
+    studentBId = studentB.id;
 
     await prisma.roleAssignment.create({
       data: {
@@ -278,6 +280,35 @@ describe('Student Activity Passport & Extracurricular Dossier (E2E) (M14)', () =
       expect(res.body.summary.eventsAttended).toBe(0);
       expect(res.body.summary.totalActivities).toBe(0);
       expect(res.body.activities).toHaveLength(0);
+    });
+
+    it('excludes future role assignments that have not yet commenced', async () => {
+      // Create a future role assignment for Student B (starting 30 days from now)
+      const coreRole = await prisma.role.findUniqueOrThrow({ where: { code: RoleCode.CORE } });
+      const techComm = await prisma.committee.findFirstOrThrow();
+      const futureRa = await prisma.roleAssignment.create({
+        data: {
+          userId: studentBId,
+          roleId: coreRole.id,
+          committeeId: techComm.id,
+          termStart: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // Future
+        },
+      });
+
+      const res = await request(app.getHttpServer())
+        .get('/api/me/passport')
+        .set('Cookie', [studentBSessionCookie]);
+
+      // Clean up future assignment immediately so Student B remains an ordinary member for subsequent tests
+      await prisma.roleAssignment.delete({ where: { id: futureRa.id } });
+
+      expect(res.status).toBe(200);
+      // Future role must NOT be counted as completed or active tenure
+      expect(res.body.summary.committeeTenures).toBe(0);
+      const futureRoleItem = res.body.activities.find(
+        (a: PassportActivityItem) => a.type === 'committee_role',
+      );
+      expect(futureRoleItem).toBeUndefined();
     });
   });
 
@@ -438,11 +469,14 @@ describe('Student Activity Passport & Extracurricular Dossier (E2E) (M14)', () =
     });
 
     it('verifies successfully via unified public endpoint /api/verify/:code', async () => {
-      const res = await request(app.getHttpServer()).get(`/api/passports/verify/${testRawCode}`);
+      const res = await request(app.getHttpServer()).get(`/api/verify/${testRawCode}`);
 
       expect(res.status).toBe(200);
       expect(res.body.isAuthentic).toBe(true);
       expect(res.body.status).toBe('valid');
+      expect(res.body.credentialType).toBe('passport');
+      expect(res.body.passportNumber).toBe('CSI-PASS-2026-TEST');
+      expect(res.body.studentName).toBe('Ananya Sharma');
     });
 
     it('returns status: invalid for malformed code', async () => {
@@ -500,6 +534,67 @@ describe('Student Activity Passport & Extracurricular Dossier (E2E) (M14)', () =
       expect(verifyRes.body.status).toBe('revoked');
       expect(verifyRes.body.isAuthentic).toBe(false);
       expect(verifyRes.body.revocationReason).toBe('Student graduated and passport term closed.');
+    });
+
+    it('supersedes earlier active passports when re-exporting, preserving historical record', async () => {
+      // Create a fresh active passport for Student A
+      const { VerificationCodeService } = await import(
+        '../../apps/api/src/modules/certificates/verification/verification-code.service.js'
+      );
+      const codeService = new VerificationCodeService();
+      const code1 = codeService.generateVerificationCode();
+      const codeHash1 = codeService.hashVerificationCode(code1);
+      const { randomUUID } = await import('crypto');
+      const uuid1 = randomUUID();
+      const dummyPdf1 = Buffer.from('%PDF-1.4 dummy passport 1');
+      const saved1 = await passportStorageService.savePassportPdf(uuid1, dummyPdf1);
+
+      await prisma.passport.create({
+        data: {
+          id: uuid1,
+          userId: studentAId,
+          passportNumber: 'CSI-PASS-HISTORICAL-1',
+          status: 'active',
+          fileHash: saved1.fileHash,
+          fileSizeBytes: dummyPdf1.length,
+          storagePath: saved1.storagePath,
+          verificationCodeHash: codeHash1,
+          summaryJson: { eventsAttended: 1, certificatesEarned: 1, committeeTenures: 1, totalActivities: 3 },
+          generatedAt: new Date(Date.now() - 3600000), // 1 hour ago
+        },
+      });
+
+      // Student A exports a new passport
+      const exportRes = await request(app.getHttpServer())
+        .post('/api/me/passport/export')
+        .set('X-CSRF-Token', csrfToken)
+        .set('Cookie', [studentASessionCookie, csrfCookie]);
+
+      expect(exportRes.status).toBe(200);
+
+      // Now verify the OLD code1: status must be revoked/superseded!
+      const verifyOldRes = await request(app.getHttpServer()).get(`/api/verify/${code1}`);
+      expect(verifyOldRes.status).toBe(200);
+      expect(verifyOldRes.body.status).toBe('revoked');
+      expect(verifyOldRes.body.isAuthentic).toBe(false);
+      expect(verifyOldRes.body.message).toContain('superseded');
+    });
+
+    it('prevents rate-limit bypass when attacker rotates spoofed X-Forwarded-For headers', async () => {
+      // Send 30 requests with varying spoofed X-Forwarded-For headers
+      for (let i = 1; i <= 30; i++) {
+        await request(app.getHttpServer())
+          .get('/api/verify/0000-0000-0000-0000')
+          .set('X-Forwarded-For', `198.51.100.${i}`);
+      }
+
+      // 31st request from same client connection should be rejected with 429 Too Many Requests even with another spoofed IP
+      const rateLimitedRes = await request(app.getHttpServer())
+        .get('/api/verify/0000-0000-0000-0000')
+        .set('X-Forwarded-For', '203.0.113.99');
+
+      expect(rateLimitedRes.status).toBe(429);
+      expect(rateLimitedRes.headers['retry-after']).toBeDefined();
     });
   });
 });

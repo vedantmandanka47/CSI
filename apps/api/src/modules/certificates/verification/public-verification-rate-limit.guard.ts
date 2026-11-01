@@ -37,10 +37,8 @@ export class PublicVerificationRateLimitGuard implements CanActivate {
     const req = http.getRequest<Request>();
     const res = http.getResponse<Response>();
 
-    const clientIp =
-      (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() ||
-      req.socket.remoteAddress ||
-      'unknown';
+    // SEC-28 & AUD-SEC-01: Trust Express req.ip (configured via trust proxy) over raw client-spoofed headers
+    const clientIp = req.ip || req.socket.remoteAddress || 'unknown';
 
     const now = Date.now();
     let record = this.store.get(clientIp);

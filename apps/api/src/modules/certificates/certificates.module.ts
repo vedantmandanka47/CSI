@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { FontManagerService } from './templates/font-manager.service.js';
 import { AssetManagerService } from './templates/asset-manager.service.js';
 import { LayoutEngineService } from './templates/layout-engine.service.js';
@@ -15,9 +15,10 @@ import { CertificatesController } from './controllers/certificates.controller.js
 import { MeCertificatesController } from './controllers/me-certificates.controller.js';
 import { PublicVerificationController } from './controllers/public-verification.controller.js';
 import { PrismaModule } from '../../infra/prisma/prisma.module.js';
+import { PassportsModule } from '../passports/passports.module.js';
 
 @Module({
-  imports: [PrismaModule],
+  imports: [PrismaModule, forwardRef(() => PassportsModule)],
   controllers: [
     CertificatesController,
     MeCertificatesController,

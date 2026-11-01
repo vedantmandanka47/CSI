@@ -20,7 +20,7 @@ This document registers every personal data field stored, processed, or transmit
 | `passports.user_id` | Reference to student recipient for dossier compilation | Essential for activity passport generation | Retained during active student enrollment + 3 academic years | Self, Admin (`export.data`) |
 | `passports.passport_number` | Unique identifier for placement and academic credentialing | Legitimate educational and career credentialing | Retained with passport record | Self, Admin, Public Verification |
 | `passports.verification_code_hash` | SHA-256 hash of Crockford Base32 verification code | Cryptographic anti-forgery validation | Retained with passport record | Application internal only (never exposed) |
-| `passports.summary_json` | Snapshot of verified participation metrics at time of export | Verifiable record of extracurricular contributions | Retained with passport record | Self, Admin, Public Verification |
+| `passports.summary_json` | Immutable JSON snapshot containing aggregate metrics (`counts`) and itemized activity records (`activities`: id, type, title, category, date, verificationStatus) frozen at the time of export | Verifiable record of extracurricular contributions | Retained with passport record | Self, Admin, Public Verification (counts and non-sensitive fields only) |
 | `passports.file_hash` | Cryptographic SHA-256 checksum of generated PDF | Tamper detection and dossier integrity verification | Retained with passport record | Application internal only |
 
 ---

@@ -112,3 +112,39 @@ Students require a consolidated, tamper-evident extracurricular passport compili
 - Complete student PII privacy during third-party QR code scanning.
 - Ultra-fast, zero-overhead PDF generation within memory limits.
 
+---
+
+## ADR-005: Unified Credential Verification Gateway and Cryptographic Assurance Boundaries
+
+### Status
+Accepted `[DEFAULT]`
+
+### Context
+During post-implementation audit of Module M14, three critical architectural considerations emerged:
+1. Verifiers scanning Crockford Base32 QR codes should not be required to know ahead of time whether a code represents a single event certificate or a cumulative activity passport.
+2. Public verification endpoints protected by IP rate limiting were vulnerable to spoofed `X-Forwarded-For` headers if the application directly parsed headers rather than relying on Express's trusted proxy configuration.
+3. Requirements in `PE.md` specified "digitally signed, tamper-evident PDF dossier". A formal boundary was required between hash-based tamper evidence and asymmetric digital signing (PAdES / PKCS#7).
+
+### Decision
+1. **Unified Credential Verification Gateway:**
+   - `GET /api/verify/:code` is established as the single canonical public verification route.
+   - `PublicVerificationController` queries `Certificate` records first. If unassigned, it delegates to `PassportVerificationService`.
+   - Returns a unified polymorphic response payload: type (`certificate` or `passport`), verification status (`valid`, `revoked`, `integrity_mismatch`, `not_found`, `invalid`), recipient name, and non-sensitive metadata.
+2. **Anti-Spoofing Rate Limiting:**
+   - All rate-limiting guards and controllers must resolve client identity via `req.ip` (or `req.socket.remoteAddress`), relying on Express `trust proxy` configured via `TRUST_PROXY_HOPS`.
+   - Direct extraction of raw `X-Forwarded-For` strings is strictly forbidden.
+3. **Snapshot Immutability and Superseded Lifecycle:**
+   - Passport exports freeze an itemized snapshot (`passports.summaryJson`) including both metrics and activity item arrays.
+   - When a student generates a subsequent passport, prior active passports are automatically updated to `status = 'superseded'`.
+   - Public verification of superseded passports returns an explicit status indicating that a newer version has replaced the document.
+   - If an underlying certificate referenced in a frozen snapshot is revoked post-issuance, verification appends an advisory note without altering the immutable snapshot record.
+4. **Cryptographic Assurance Scope:**
+   - **Phase 4 Baseline (Implemented):** Tamper-evident integrity is guaranteed via SHA-256 database binding, high-entropy Crockford Base32 codes (80-bit random entropy), on-demand disk file integrity checks, and QR verification routing.
+   - **Phase 5 Institutional PKI (Roadmap):** Asymmetric cryptographic digital signing (PAdES / PKCS#7) with embedded X.509 certificates requires institutional private keys and an HSM or secure secret store. Insecure mock keys or self-signed certificates are rejected. Formal PAdES signing is deferred until institutional key material is provisioned.
+
+### Consequences
+- Single frictionless QR scanning experience across all credential types for recruiters and verifiers.
+- Robust protection against automated verification enumeration attacks even when behind proxies.
+- Clean historical audit trail without phantom valid passports.
+- Honest, rigorous cryptographic posture that avoids false security claims.
+

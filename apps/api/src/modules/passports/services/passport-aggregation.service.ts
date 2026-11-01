@@ -7,6 +7,7 @@ import {
   PassportActivityType,
   PassportActivityCategory,
   CertificateStatus,
+  RoleCode,
   ErrorCode,
 } from '@csi/shared';
 
@@ -109,13 +110,31 @@ export class PassportAggregationService {
       },
     });
 
+    const now = new Date();
+
     // 3. Query Verified Committee Role Assignments (Committee Tenures)
-    const roleAssignments = await this.prisma.roleAssignment.findMany({
+    // Only includes tenures that have commenced (termStart <= now). Future terms are excluded.
+    const rawRoleAssignments = await this.prisma.roleAssignment.findMany({
       where: {
         userId: user.id,
+        termStart: {
+          lte: now,
+        },
         OR: [
           { committeeId: { not: null } },
-          { role: { code: { in: ['committee', 'subcore', 'core', 'president', 'vp'] } } },
+          {
+            role: {
+              code: {
+                in: [
+                  RoleCode.PRESIDENT,
+                  RoleCode.VP,
+                  RoleCode.CORE,
+                  RoleCode.SUBCORE,
+                  RoleCode.COMMITTEE,
+                ],
+              },
+            },
+          },
         ],
       },
       include: {
@@ -137,6 +156,41 @@ export class PassportAggregationService {
       },
     });
 
+    // Deduplicate and filter out unrelated non-student or unassigned member roles
+    const seenRoleAssignments = new Set<string>();
+    const roleAssignments: typeof rawRoleAssignments = [];
+
+    for (const ra of rawRoleAssignments) {
+      if (
+        ra.role.code === RoleCode.ADMIN ||
+        ra.role.code === RoleCode.FACULTY ||
+        ra.role.code === RoleCode.GUEST ||
+        ra.role.code === RoleCode.EVENT_GUEST
+      ) {
+        continue;
+      }
+
+      // General member without committee assignment is general membership, not committee tenure
+      if (ra.role.code === RoleCode.MEMBER && !ra.committeeId && !ra.committee) {
+        continue;
+      }
+
+      // Committee role without committee is invalid
+      if (ra.role.code === RoleCode.COMMITTEE && !ra.committeeId && !ra.committee) {
+        continue;
+      }
+
+      // Deduplicate by role + committee + tenure year
+      const yearKey = ra.termStart.getUTCFullYear();
+      const commKey = ra.committeeId ?? ra.committee?.code ?? 'branch';
+      const dedupeKey = `${ra.role.code}:${commKey}:${yearKey}`;
+      if (seenRoleAssignments.has(dedupeKey)) {
+        continue;
+      }
+      seenRoleAssignments.add(dedupeKey);
+      roleAssignments.push(ra);
+    }
+
     // 4. Query Latest Generated Passport Snapshot
     const latestPassport = await this.prisma.passport.findFirst({
       where: {
@@ -153,10 +207,10 @@ export class PassportAggregationService {
     // Map Committee Roles
     for (const ra of roleAssignments) {
       const isLeadership =
-        ra.role.code === 'president' ||
-        ra.role.code === 'vp' ||
-        ra.role.code === 'core' ||
-        ra.role.code === 'subcore';
+        ra.role.code === RoleCode.PRESIDENT ||
+        ra.role.code === RoleCode.VP ||
+        ra.role.code === RoleCode.CORE ||
+        ra.role.code === RoleCode.SUBCORE;
 
       activities.push({
         id: `role-${ra.id}`,

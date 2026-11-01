@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { PrismaModule } from '../../infra/prisma/prisma.module.js';
 import { CertificatesModule } from '../certificates/certificates.module.js';
 import { PassportStorageService } from './services/passport-storage.service.js';
@@ -10,7 +10,7 @@ import { MePassportController } from './controllers/me-passport.controller.js';
 import { PassportsController } from './controllers/passports.controller.js';
 
 @Module({
-  imports: [PrismaModule, CertificatesModule],
+  imports: [PrismaModule, forwardRef(() => CertificatesModule)],
   controllers: [MePassportController, PassportsController],
   providers: [
     PassportStorageService,

@@ -71,7 +71,18 @@ export class PassportExportService {
       verificationUrl,
     );
 
-    // 4. Create Passport Record in Database (Transactionally)
+    // 4. Mark earlier active passports for this student as 'superseded' to preserve historical snapshot
+    await this.prisma.passport.updateMany({
+      where: {
+        userId: passportData.student.id,
+        status: 'active',
+      },
+      data: {
+        status: 'superseded',
+      },
+    });
+
+    // 5. Create Passport Record in Database with full activity snapshot
     const passportRecord = await this.prisma.passport.create({
       data: {
         userId: passportData.student.id,
@@ -80,7 +91,19 @@ export class PassportExportService {
         fileHash: rendered.fileHash,
         fileSizeBytes: rendered.pdfBuffer.length,
         verificationCodeHash,
-        summaryJson: passportData.summary as unknown as object,
+        summaryJson: {
+          counts: passportData.summary,
+          activities: passportData.activities.map((a) => ({
+            id: a.id,
+            type: a.type,
+            title: a.title,
+            category: a.category,
+            date: a.date,
+            verificationStatus: a.verificationStatus,
+          })),
+          snapshotAt: new Date().toISOString(),
+          version: 1,
+        },
         generatedAt: new Date(),
       },
     });

@@ -157,10 +157,8 @@ export class PassportsController {
       });
     }
 
-    const clientIp =
-      (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() ||
-      req.socket.remoteAddress ||
-      '127.0.0.1';
+    // AUD-SEC-01: Use Express req.ip (trust proxy) rather than spoofable raw headers
+    const clientIp = req.ip || req.socket.remoteAddress || '127.0.0.1';
 
     return this.verificationService.revokePassport(
       id,

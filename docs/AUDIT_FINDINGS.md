@@ -11,7 +11,7 @@
 
 | Finding ID | Severity | Category | Finding Summary | Affected Area / Component | M14 Blocker | Production Blocker | Status |
 |---|:---:|---|---|---|:---:|:---:|:---:|
-| **AUD-SEC-01** | **High** | API Security | Client-Spoofed `X-Forwarded-For` Bypasses Public Verification Rate Limiter | `PublicVerificationRateLimitGuard` & `PublicVerificationController` | No | **Yes** | Confirmed |
+| **AUD-SEC-01** | **High** | API Security | Client-Spoofed `X-Forwarded-For` Bypasses Public Verification Rate Limiter | `PublicVerificationRateLimitGuard` & `PublicVerificationController` | No | **No** (Resolved) | **Resolved** |
 | **AUD-CERT-01** | **High** | Data Integrity | Certificate Fallback Regeneration Omits Verification Code & QR Badge | `CertificateIssuanceService.getCertificateDownload` | **No** (Resolved) | **No** (Resolved) | **Resolved** |
 | **AUD-CERT-02** | **High** | Concurrency / Logic | Idempotency-Key Replay Fails to Validate Request Hash & Stale Responses | `CertificateIssuanceService.issueBatch` & `IdempotencyKey` | No | **Yes** | Confirmed |
 | **AUD-SEC-02** | **High** | Authorization | Unauthenticated, Un-Rate-Limited Public Endpoint Exposes Student Identity | `IdCardController.verifyQrPass` (`POST /api/id-card/verify`) | No | **Yes** | Confirmed |
@@ -24,6 +24,12 @@
 | **AUD-TEST-01** | **Low** | QA / Testing | Zero Component or Visual E2E Test Coverage for Frontend App Router | `apps/web/src` (43 TSX/TS files, 22 routes) | No | No | Confirmed |
 | **AUD-DATA-01** | **Low** | Database / Logic | Clock Skew Offline Sync Fallback Violates Unique Composite Constraint | `AttendanceService.syncOfflineOperations` | No | No | Confirmed |
 | **AUD-DEP-01** | **Informational** | Supply Chain | High Severity Zod Advisory (`GHSA-mrhx-c7xc-m3w5`) Deferred Due to Major API Rewrite | `@csi/shared`, `@csi/api`, `@csi/web` (`zod@3.24.2`) | No | No | Documented |
+| **M14-AUD-01** | **Medium** | Cryptography | Specification Gap: Asymmetric Digital PDF Signature (PAdES / PKCS#7) vs Tamper-Evident SHA-256 Checksum | `PassportPdfService` & `PassportVerificationService` | No | Roadmap | Documented |
+| **M14-AUD-02** | **High** | API Architecture | Unified Public Verification Route (`GET /api/verify/:code`) Omits Activity Passports | `PublicVerificationController` | No | **No** (Resolved) | **Resolved** |
+| **M14-AUD-03** | **High** | API Security | Client-Spoofed `X-Forwarded-For` Bypasses Public Passport Verification Rate Limiter | `PublicVerificationRateLimitGuard` & `PassportsController` | No | **No** (Resolved) | **Resolved** |
+| **M14-AUD-04** | **Medium** | Data Integrity | Activity Passport Historical Snapshot Lacked Detailed Item Records & Superseded Status | `PassportExportService` & `PassportVerificationService` | No | **No** (Resolved) | **Resolved** |
+| **M14-AUD-05** | **Medium** | Business Logic | Committee Role Aggregation Lacked Canonical Role Code Validation and Included Future Tenures | `PassportAggregationService` | No | **No** (Resolved) | **Resolved** |
+| **M14-AUD-06** | **Low** | Credential Transparency | Post-Issuance Revocation of Underlying Certificates Not Communicated During Verification | `PassportVerificationService` | No | **No** (Resolved) | **Resolved** |
 
 ---
 
@@ -57,7 +63,8 @@
 - **Remediation:**
   Replace manual header parsing with `req.ip || req.socket.remoteAddress || 'unknown'` across all verification guards and controllers.
 - **M14 Blocker:** No.
-- **Production Blocker:** Yes.
+- **Production Blocker:** No (Resolved).
+- **Resolution Status:** **Resolved** (Replaced manual raw `x-forwarded-for` header extraction with Express-sanitized `req.ip` in `PublicVerificationRateLimitGuard`, `PublicVerificationController`, and `PassportsController`. Verified with automated test in `passports.e2e-spec.ts` asserting rotating spoofed `X-Forwarded-For` headers still trigger 429 Rate Limited).
 
 ---
 
@@ -355,3 +362,90 @@
   Evaluate Zod 4 migration during Phase 5 (Production Hardening).
 - **M14 Blocker:** No.
 - **Production Blocker:** No.
+
+---
+
+## 3. Module M14 Post-Implementation Audit Profiles
+
+---
+
+### Finding M14-AUD-01: Specification Gap: Asymmetric Digital PDF Signature (PAdES / PKCS#7) vs Tamper-Evident SHA-256 Checksum
+- **Severity:** Medium
+- **Category:** Cryptography & Identity Assurance
+- **Affected Components:**
+  - `apps/api/src/modules/passports/services/passport-pdf.service.ts`
+  - `apps/api/src/modules/passports/services/passport-verification.service.ts`
+- **Explanation:**
+  `PE.md` (lines 197, 249) specified "digitally signed, tamper-evident PDF dossier". The current implementation provides tamper-evident SHA-256 file checksums bound to the database, Crockford Base32 verification codes, and QR verification badges. However, it does not include asymmetric digital signing (PAdES / PKCS#7 / Adobe CDS) using an X.509 cryptographic certificate. Asymmetric signing requires institutional GCET branch private keys and an HSM or secure key management service. Mocking or self-signing private keys in source code would introduce security risks without providing verifiable institutional trust.
+- **Impact:**
+  The PDF dossier is tamper-evident via web verification but does not display a cryptographic signature banner inside PDF readers (such as Adobe Acrobat Reader).
+- **Remediation:**
+  Document this architectural scope boundary clearly. Retain verified SHA-256 integrity and Crockford Base32 QR verification. Schedule formal PAdES-BES digital signature onboarding for Phase 5 when institutional GCET PKI credentials are provided.
+- **Resolution Status:** **Documented (Roadmap)**
+
+---
+
+### Finding M14-AUD-02: Unified Public Verification Route (`GET /api/verify/:code`) Omits Activity Passports
+- **Severity:** High
+- **Category:** API Architecture & Usability
+- **Affected Components:**
+  - `apps/api/src/modules/certificates/controllers/public-verification.controller.ts`
+- **Explanation:**
+  `GET /api/verify/:code` served as the single public entry point for scanned QR codes, but only queried the `Certificate` database table. Scanned activity passport QR codes pointing to `/api/verify/:code` returned `not_found`, forcing verifiers to use the secondary route `/api/passports/verify/:code`.
+- **Remediation:**
+  Injected `PassportVerificationService` into `PublicVerificationController` via `forwardRef`. If a code is not found in certificates, the unified endpoint checks for a valid passport before returning `not_found`.
+- **Resolution Status:** **Resolved** (Verified in `passports.e2e-spec.ts`)
+
+---
+
+### Finding M14-AUD-03: Client-Spoofed `X-Forwarded-For` Bypasses Public Passport Verification Rate Limiter
+- **Severity:** High
+- **Category:** API Security & Abuse Resistance
+- **Affected Components:**
+  - `apps/api/src/modules/certificates/verification/public-verification-rate-limit.guard.ts`
+  - `apps/api/src/modules/passports/controllers/passports.controller.ts`
+- **Explanation:**
+  Public passport verification routes relied on parsing `req.headers['x-forwarded-for']?.split(',')[0]`, which allowed callers to supply arbitrary spoofed IP addresses to bypass the 30 req/min rate limit (identical to `AUD-SEC-01`).
+- **Remediation:**
+  Replaced manual header extraction with `req.ip || req.socket.remoteAddress || 'unknown'` which respects Express `trust proxy` configuration (`env.TRUST_PROXY_HOPS`).
+- **Resolution Status:** **Resolved** (Verified in `passports.e2e-spec.ts`)
+
+---
+
+### Finding M14-AUD-04: Activity Passport Historical Snapshot Lacked Detailed Item Records & Superseded Status
+- **Severity:** Medium
+- **Category:** Data Integrity & Audit Trail
+- **Affected Components:**
+  - `apps/api/src/modules/passports/services/passport-export.service.ts`
+  - `apps/api/src/modules/passports/services/passport-verification.service.ts`
+- **Explanation:**
+  `passports.summaryJson` only contained flat aggregate counts (`eventsAttended`, `certificatesEarned`, `committeesServed`) without preserving the itemized activity details at export time. Additionally, previously exported active passports remained in `generated` status when a member generated a newer passport, allowing multiple differing "valid" passports to circulate concurrently.
+- **Remediation:**
+  Enriched `summaryJson` to record both `counts` and an itemized `activities` snapshot array (`id`, `type`, `title`, `category`, `date`, `verificationStatus`). Updated export service to automatically mark previous active passports for that student as `status = 'superseded'`.
+- **Resolution Status:** **Resolved** (Verified in `passport-export.service.spec.ts` and `passport-verification.service.spec.ts`)
+
+---
+
+### Finding M14-AUD-05: Committee Role Aggregation Lacked Canonical Role Code Validation and Included Future Tenures
+- **Severity:** Medium
+- **Category:** Business Logic & Data Quality
+- **Affected Components:**
+  - `apps/api/src/modules/passports/services/passport-aggregation.service.ts`
+- **Explanation:**
+  Aggregation previously checked strings loosely without strictly checking against canonical `RoleCode` enums (`RoleCode.PRESIDENT`, `RoleCode.VP`, `RoleCode.CORE`, `RoleCode.SUBCORE`, `RoleCode.COMMITTEE`). Future terms (`termStart > now`) were included prematurely in official dossiers, and students holding the same role across multiple academic sessions lacked term deduplication.
+- **Remediation:**
+  Bound aggregation to canonical `RoleCode` enums, added filter `termStart <= now` to exclude future tenures, and implemented deduplication by `(roleCode, committeeId, termStart year)`.
+- **Resolution Status:** **Resolved** (Verified in `passport-aggregation.service.spec.ts` and `passports.e2e-spec.ts`)
+
+---
+
+### Finding M14-AUD-06: Post-Issuance Revocation of Underlying Certificates Not Communicated During Verification
+- **Severity:** Low
+- **Category:** Credential Transparency
+- **Affected Components:**
+  - `apps/api/src/modules/passports/services/passport-verification.service.ts`
+- **Explanation:**
+  Because the activity passport stores an immutable historical snapshot, an individual certificate revoked after passport export remained counted in the snapshot without any indication to a third-party verifier.
+- **Remediation:**
+  Updated `PassportVerificationService` to check if any certificates referenced in the snapshot have been revoked since issuance and append an explicit advisory notice in the public response.
+- **Resolution Status:** **Resolved** (Verified in `passport-verification.service.spec.ts`)

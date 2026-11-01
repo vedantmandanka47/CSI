@@ -15,6 +15,9 @@ describe('PassportVerificationService', () => {
       findUnique: jest.fn(),
       update: jest.fn(),
     },
+    certificate: {
+      findMany: jest.fn(),
+    },
     auditLog: {
       create: jest.fn(),
     },
@@ -122,6 +125,38 @@ describe('PassportVerificationService', () => {
       expect(res.isAuthentic).toBe(false);
       expect(res.revocationReason).toBe('Academic disciplinary action.');
       expect(res.revokedAt).toBeDefined();
+    });
+
+    it('returns REVOKED with superseded message when passport was superseded by newer issuance', async () => {
+      mockPrisma.passport.findUnique.mockResolvedValue({
+        ...mockPassportRecord,
+        status: 'superseded',
+      });
+
+      const res = await service.verifyPassport(validFormattedCode);
+
+      expect(res.status).toBe(VerificationOutcome.REVOKED);
+      expect(res.isAuthentic).toBe(false);
+      expect(res.message).toContain('superseded by a more recent dossier issuance');
+    });
+
+    it('appends warning notice when underlying certificate was subsequently revoked', async () => {
+      mockPrisma.passport.findUnique.mockResolvedValue({
+        ...mockPassportRecord,
+        summaryJson: {
+          counts: { eventsAttended: 1, certificatesEarned: 1, committeeTenures: 0, totalActivities: 2 },
+          activities: [
+            { id: 'cert-uuid-revoked', type: 'certificate', title: 'Python Hackathon 2026' },
+          ],
+        },
+      });
+      mockPrisma.certificate.findMany.mockResolvedValue([{ id: 'uuid-revoked' }]);
+
+      const res = await service.verifyPassport(validFormattedCode);
+
+      expect(res.status).toBe(VerificationOutcome.VALID);
+      expect(res.isAuthentic).toBe(true);
+      expect(res.message).toContain('were subsequently revoked');
     });
 
     it('returns INTEGRITY_MISMATCH when stored PDF hash diverges from database hash', async () => {

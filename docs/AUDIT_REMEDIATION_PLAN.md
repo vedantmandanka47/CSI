@@ -39,20 +39,34 @@ This remediation plan organizes the 13 findings identified in the comprehensive 
 
 ---
 
+### Stage 1.5: Module M14 Post-Implementation Hardening — COMPLETED
+
+Completed during the post-implementation audit of Module M14 (Student Activity Passport & Extracurricular Dossier):
+
+| Finding ID | Title | Component | Complexity | Status | Resolution |
+|---|---|---|:---:|:---:|---|
+| **AUD-SEC-01** / **M14-AUD-03** | Replace Raw `X-Forwarded-For` with Sanitized `req.ip` | `PublicVerificationRateLimitGuard`, `PublicVerificationController`, `PassportsController` | Low | **Resolved** | Replaced manual `split(',')[0]` header extraction with Express-sanitized `req.ip`. E2E tested against rotating spoofed headers. |
+| **M14-AUD-02** | Unified Public Verification Route for Passports and Certificates | `PublicVerificationController` | Low | **Resolved** | Injected `PassportVerificationService` via `forwardRef`; route automatically verifies certificates first, then passports. |
+| **M14-AUD-04** | Enriched Historical Activity Snapshot & Superseded Passport Invalidation | `PassportExportService`, `PassportVerificationService` | Medium | **Resolved** | `summaryJson` captures both metrics and full item snapshots; exporting new passport transitions previous ones to `superseded`. |
+| **M14-AUD-05** | Canonical Committee Role Validation & Future Tenure Exclusion | `PassportAggregationService` | Low | **Resolved** | Enforced canonical `RoleCode` enums, filtered `termStart <= now`, and deduplicated recurring tenures by year. |
+| **M14-AUD-06** | Post-Issuance Revocation Advisory on Underlying Snapshot Credentials | `PassportVerificationService` | Low | **Resolved** | Verification inspects underlying snapshot certificate statuses and emits advisory notice if any have been revoked. |
+
+---
+
 ### Stage 2: Pre-Production Security & Authorization Fixes
 
 Must be completed prior to deploying the platform to production or admitting real GCET students:
 
-| Finding ID | Title | Component | Complexity | Remediation Action |
-|---|---|---|:---:|---|
-| **AUD-SEC-01** | Replace Raw `X-Forwarded-For` with Sanitized `req.ip` | `PublicVerificationRateLimitGuard`, `PublicVerificationController` | Low | Replace manual `req.headers['x-forwarded-for'].split(',')[0]` with Express-sanitized `req.ip`. Express correctly evaluates trusted hops via `TRUST_PROXY_HOPS`. |
-| **AUD-SEC-02** | Secure `POST /api/id-card/verify` with Authentication & Rate Limiting | `IdCardController.verifyQrPass` | Low | Remove `@Public()`. Require `@Authenticated()` and `@RequirePermission(PermissionCode.ATTENDANCE_MARK)`. Add `this.rateLimiter.assertLimit('verify-qr-pass:' + ip, 60, 60000)`. |
-| **AUD-CERT-02** | Enforce Request Hash Matching & Expiration on Idempotency Keys | `CertificateIssuanceService.issueBatch` | Medium | In `issueBatch()`, compare `existingKey.requestHash === currentRequestHash`. If different, throw HTTP 422 `IDEMPOTENCY_PAYLOAD_MISMATCH`. Verify `existingKey.expiresAt > new Date()`. Reserve the key atomically at the start of the batch transaction. |
-| **AUD-SEC-03** | Migrate Dynamic QR Pass from HMAC-SHA256 to Ed25519 Asymmetric Signatures | `IdCardService.getIdCard`, `IdCardService.verifyQrPass` | Medium | Use Node's native `crypto.sign('ed25519', ...)` with `QR_SIGNING_PRIVATE_KEY` for generation, and `crypto.verify('ed25519', ...)` with `QR_SIGNING_PUBLIC_KEY` for verification. Remove the hardcoded fallback string. |
-| **AUD-SEC-04** | Encrypt Attendance TOTP Secrets at Rest with AES-256-GCM | `AttendanceService` | Medium | Encrypt `session.totpSecret` using `APP_ENCRYPTION_KEY` before storing in `attendance_sessions`. Decrypt only during code verification. |
-| **AUD-PRIV-01** | Implement Automated Retention Schedules & Expired Token Purging | API Scheduled Worker / SQL Procedure | Medium | Create a lightweight scheduled task to delete expired `sessions`, `verification_tokens`, `password_reset_tokens`, and `idempotency_keys`. Anonymize `audit_log.ip` older than 90 days. |
-| **AUD-PERF-01** | Implement In-Memory Rate Limiter Eviction & Multi-Instance Preparation | `RateLimiterService` | Low | Add periodic TTL key cleanup interval to `RateLimiterService.store` to prevent unbounded memory growth. |
-| **AUD-CERT-03** | Add Zombie Batch Crash Recovery | `CertificateBatchProcessorService` | Low | Allow `retryBatch()` to recover batches stuck in `processing` state for longer than 30 minutes. |
+| Finding ID | Title | Component | Complexity | Status | Remediation Action |
+|---|---|---|:---:|:---:|---|
+| **AUD-SEC-01** | Replace Raw `X-Forwarded-For` with Sanitized `req.ip` | `PublicVerificationRateLimitGuard`, `PublicVerificationController` | Low | **Resolved** | Resolved during M14 Audit Hardening (see Stage 1.5 above). |
+| **AUD-SEC-02** | Secure `POST /api/id-card/verify` with Authentication & Rate Limiting | `IdCardController.verifyQrPass` | Low | Confirmed | Remove `@Public()`. Require `@Authenticated()` and `@RequirePermission(PermissionCode.ATTENDANCE_MARK)`. Add `this.rateLimiter.assertLimit('verify-qr-pass:' + ip, 60, 60000)`. |
+| **AUD-CERT-02** | Enforce Request Hash Matching & Expiration on Idempotency Keys | `CertificateIssuanceService.issueBatch` | Medium | Confirmed | In `issueBatch()`, compare `existingKey.requestHash === currentRequestHash`. If different, throw HTTP 422 `IDEMPOTENCY_PAYLOAD_MISMATCH`. Verify `existingKey.expiresAt > new Date()`. Reserve the key atomically at the start of the batch transaction. |
+| **AUD-SEC-03** | Migrate Dynamic QR Pass from HMAC-SHA256 to Ed25519 Asymmetric Signatures | `IdCardService.getIdCard`, `IdCardService.verifyQrPass` | Medium | Confirmed | Use Node's native `crypto.sign('ed25519', ...)` with `QR_SIGNING_PRIVATE_KEY` for generation, and `crypto.verify('ed25519', ...)` with `QR_SIGNING_PUBLIC_KEY` for verification. Remove the hardcoded fallback string. |
+| **AUD-SEC-04** | Encrypt Attendance TOTP Secrets at Rest with AES-256-GCM | `AttendanceService` | Medium | Confirmed | Encrypt `session.totpSecret` using `APP_ENCRYPTION_KEY` before storing in `attendance_sessions`. Decrypt only during code verification. |
+| **AUD-PRIV-01** | Implement Automated Retention Schedules & Expired Token Purging | API Scheduled Worker / SQL Procedure | Medium | Confirmed | Create a lightweight scheduled task to delete expired `sessions`, `verification_tokens`, `password_reset_tokens`, and `idempotency_keys`. Anonymize `audit_log.ip` older than 90 days. |
+| **AUD-PERF-01** | Implement In-Memory Rate Limiter Eviction & Multi-Instance Preparation | `RateLimiterService` | Low | Confirmed | Add periodic TTL key cleanup interval to `RateLimiterService.store` to prevent unbounded memory growth. |
+| **AUD-CERT-03** | Add Zombie Batch Crash Recovery | `CertificateBatchProcessorService` | Low | Confirmed | Allow `retryBatch()` to recover batches stuck in `processing` state for longer than 30 minutes. |
 
 ---
 

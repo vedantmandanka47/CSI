@@ -265,4 +265,103 @@ describe('PassportAggregationService', () => {
       }),
     );
   });
+
+  it('includes completed (expired) tenures and preserves historical tenure records', async () => {
+    mockPrisma.user.findUnique.mockResolvedValue(mockUser);
+    mockPrisma.attendanceRecord.findMany.mockResolvedValue([]);
+    mockPrisma.certificate.findMany.mockResolvedValue([]);
+
+    mockPrisma.roleAssignment.findMany.mockResolvedValue([
+      {
+        id: 'ra-past',
+        userId: 'user-1',
+        termStart: new Date('2025-08-01T00:00:00Z'),
+        termEnd: new Date('2026-05-31T00:00:00Z'), // Term ended in past
+        role: { code: 'committee', name: 'Technical Team Coordinator' },
+        committeeId: 'tech',
+        committee: { code: 'tech', name: 'Technical Committee' },
+      },
+    ]);
+    mockPrisma.passport.findFirst.mockResolvedValue(null);
+
+    const res = await service.getStudentPassport('user-1');
+
+    expect(res.summary.committeeTenures).toBe(1);
+    expect(res.activities[0]?.title).toBe('Technical Team Coordinator — Technical Committee');
+    expect(res.activities[0]?.tenureEnd).toBe('2026-05-31T00:00:00.000Z');
+  });
+
+  it('deduplicates multiple assignments for the same role, committee, and year', async () => {
+    mockPrisma.user.findUnique.mockResolvedValue(mockUser);
+    mockPrisma.attendanceRecord.findMany.mockResolvedValue([]);
+    mockPrisma.certificate.findMany.mockResolvedValue([]);
+
+    // Two identical role assignments seeded or reassigned in same term
+    mockPrisma.roleAssignment.findMany.mockResolvedValue([
+      {
+        id: 'ra-dup-1',
+        userId: 'user-1',
+        termStart: new Date('2026-08-01T00:00:00Z'),
+        termEnd: null,
+        role: { code: 'core', name: 'Core Committee Member' },
+        committee: { code: 'tech', name: 'Technical Committee' },
+      },
+      {
+        id: 'ra-dup-2',
+        userId: 'user-1',
+        termStart: new Date('2026-08-15T00:00:00Z'),
+        termEnd: null,
+        role: { code: 'core', name: 'Core Committee Member' },
+        committee: { code: 'tech', name: 'Technical Committee' },
+      },
+    ]);
+    mockPrisma.passport.findFirst.mockResolvedValue(null);
+
+    const res = await service.getStudentPassport('user-1');
+
+    expect(res.summary.committeeTenures).toBe(1);
+    expect(res.activities).toHaveLength(1);
+  });
+
+  it('excludes general membership without a committee and unrelated administrative roles', async () => {
+    mockPrisma.user.findUnique.mockResolvedValue(mockUser);
+    mockPrisma.attendanceRecord.findMany.mockResolvedValue([]);
+    mockPrisma.certificate.findMany.mockResolvedValue([]);
+
+    mockPrisma.roleAssignment.findMany.mockResolvedValue([
+      {
+        id: 'ra-member-general',
+        userId: 'user-1',
+        termStart: new Date('2026-08-01T00:00:00Z'),
+        termEnd: null,
+        role: { code: 'member', name: 'General Member' },
+        committeeId: null,
+        committee: null,
+      },
+      {
+        id: 'ra-admin',
+        userId: 'user-1',
+        termStart: new Date('2026-08-01T00:00:00Z'),
+        termEnd: null,
+        role: { code: 'admin', name: 'Administrator' },
+        committeeId: null,
+        committee: null,
+      },
+      {
+        id: 'ra-committee-no-comm',
+        userId: 'user-1',
+        termStart: new Date('2026-08-01T00:00:00Z'),
+        termEnd: null,
+        role: { code: 'committee', name: 'Committee Member' },
+        committeeId: null,
+        committee: null,
+      },
+    ]);
+    mockPrisma.passport.findFirst.mockResolvedValue(null);
+
+    const res = await service.getStudentPassport('user-1');
+
+    expect(res.summary.committeeTenures).toBe(0);
+    expect(res.activities).toHaveLength(0);
+  });
 });

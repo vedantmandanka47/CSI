@@ -7,6 +7,8 @@ import {
   UseGuards,
   Req,
   BadRequestException,
+  Inject,
+  forwardRef,
 } from '@nestjs/common';
 import { Request } from 'express';
 import { Public, RequirePermission, ReqUser } from '../../../common/decorators/index.js';
@@ -15,26 +17,44 @@ import {
   CurrentUser,
   RevokeCertificateInputSchema,
   PublicCertificateVerificationResponse,
+  PublicPassportVerificationResponse,
+  VerificationOutcome,
   CertificateDetail,
 } from '@csi/shared';
 import { CertificateVerificationService } from '../verification/certificate-verification.service.js';
 import { PublicVerificationRateLimitGuard } from '../verification/public-verification-rate-limit.guard.js';
+import { PassportVerificationService } from '../../passports/services/passport-verification.service.js';
 
 @Controller()
 export class PublicVerificationController {
-  constructor(private readonly verificationService: CertificateVerificationService) {}
+  constructor(
+    private readonly verificationService: CertificateVerificationService,
+    @Inject(forwardRef(() => PassportVerificationService))
+    private readonly passportVerificationService: PassportVerificationService,
+  ) {}
 
   /**
-   * Public unauthenticated verification endpoint for CSI certificates.
+   * Unified public unauthenticated verification endpoint for CSI certificates and activity passports.
    * Rate-limited to prevent brute-force code enumeration.
    */
   @Public()
   @UseGuards(PublicVerificationRateLimitGuard)
   @Get('verify/:code')
-  async verifyCertificate(
+  async verifyCredential(
     @Param('code') code: string,
-  ): Promise<PublicCertificateVerificationResponse> {
-    return this.verificationService.verifyCertificate(code);
+  ): Promise<PublicCertificateVerificationResponse | PublicPassportVerificationResponse> {
+    const certResult = await this.verificationService.verifyCertificate(code);
+    if (certResult.status !== VerificationOutcome.NOT_FOUND) {
+      return certResult;
+    }
+
+    // Fallback to passport verification for unified verification portal
+    const passportResult = await this.passportVerificationService.verifyPassport(code);
+    if (passportResult.status !== VerificationOutcome.NOT_FOUND) {
+      return passportResult;
+    }
+
+    return certResult;
   }
 
   /**
@@ -70,10 +90,8 @@ export class PublicVerificationController {
       });
     }
 
-    const clientIp =
-      (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() ||
-      req.socket.remoteAddress ||
-      '127.0.0.1';
+    // AUD-SEC-01: Trust Express req.ip over raw header
+    const clientIp = req.ip || req.socket.remoteAddress || '127.0.0.1';
 
     return this.verificationService.revokeCertificate(
       id,

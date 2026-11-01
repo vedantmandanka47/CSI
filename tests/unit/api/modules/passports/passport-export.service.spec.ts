@@ -15,6 +15,7 @@ describe('PassportExportService', () => {
     passport: {
       create: jest.fn(),
       update: jest.fn(),
+      updateMany: jest.fn(),
       findUnique: jest.fn(),
       findFirst: jest.fn(),
     },

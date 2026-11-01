@@ -68,26 +68,37 @@ export class PassportVerificationService {
       };
     }
 
-    // Parse summary counts if available
+    // Parse summary counts if available (supports both enriched and legacy schemas)
     let summaryCounts: PassportSummaryCounts | undefined;
+    let activitySnapshot: Array<{ id: string; type: string; title: string }> = [];
+
     if (passport.summaryJson && typeof passport.summaryJson === 'object') {
       const json = passport.summaryJson as Record<string, unknown>;
+      const countsObj =
+        json.counts && typeof json.counts === 'object'
+          ? (json.counts as Record<string, unknown>)
+          : json;
+
       if (
-        typeof json.eventsAttended === 'number' &&
-        typeof json.certificatesEarned === 'number' &&
-        typeof json.committeeTenures === 'number' &&
-        typeof json.totalActivities === 'number'
+        typeof countsObj.eventsAttended === 'number' &&
+        typeof countsObj.certificatesEarned === 'number' &&
+        typeof countsObj.committeeTenures === 'number' &&
+        typeof countsObj.totalActivities === 'number'
       ) {
         summaryCounts = {
-          eventsAttended: json.eventsAttended,
-          certificatesEarned: json.certificatesEarned,
-          committeeTenures: json.committeeTenures,
-          totalActivities: json.totalActivities,
+          eventsAttended: countsObj.eventsAttended,
+          certificatesEarned: countsObj.certificatesEarned,
+          committeeTenures: countsObj.committeeTenures,
+          totalActivities: countsObj.totalActivities,
         };
+      }
+
+      if (Array.isArray(json.activities)) {
+        activitySnapshot = json.activities as Array<{ id: string; type: string; title: string }>;
       }
     }
 
-    // 4. Revocation Transparency
+    // 4. Revocation & Superseded Transparency
     if (passport.status === 'revoked') {
       return {
         status: VerificationOutcome.REVOKED,
@@ -102,6 +113,17 @@ export class PassportVerificationService {
       };
     }
 
+    if (passport.status === 'superseded') {
+      return {
+        status: VerificationOutcome.REVOKED,
+        isAuthentic: false,
+        credentialType: 'passport',
+        passportNumber: passport.passportNumber,
+        studentName: passport.user.name,
+        message: 'This activity passport has been superseded by a more recent dossier issuance.',
+      };
+    }
+
     // 5. Must be in active status
     if (passport.status !== 'active') {
       return {
@@ -112,7 +134,27 @@ export class PassportVerificationService {
       };
     }
 
-    // 6. Document Tamper & Integrity Check (SHA-256 match against disk storage)
+    // 6. Check if any underlying certificate in the historical snapshot has since been revoked
+    let underlyingRevocationNotice: string | undefined;
+    const certIds = activitySnapshot
+      .filter((a) => a.type === 'certificate' || a.id.startsWith('cert-'))
+      .map((a) => a.id.replace(/^cert-/, ''));
+
+    if (certIds.length > 0) {
+      const revokedCerts = await this.prisma.certificate.findMany({
+        where: {
+          id: { in: certIds },
+          status: 'revoked',
+        },
+        select: { id: true },
+      });
+
+      if (revokedCerts.length > 0) {
+        underlyingRevocationNotice = `Notice: ${revokedCerts.length} credential(s) included in this historical dossier snapshot were subsequently revoked.`;
+      }
+    }
+
+    // 7. Document Tamper & Integrity Check (SHA-256 match against disk storage)
     if (passport.storagePath && passport.fileHash) {
       const integrityOk = await this.storageService.verifyFileIntegrity(
         passport.storagePath,
@@ -145,7 +187,9 @@ export class PassportVerificationService {
       generatedAt: passport.generatedAt.toISOString(),
       issuingInstitution: 'Computer Society of India - GCET Student Branch',
       summaryCounts,
-      message: 'Official CSI GCET Student Activity Passport is authentic and verified.',
+      message: underlyingRevocationNotice
+        ? `Official CSI GCET Student Activity Passport is authentic. ${underlyingRevocationNotice}`
+        : 'Official CSI GCET Student Activity Passport is authentic and verified.',
     };
   }
 

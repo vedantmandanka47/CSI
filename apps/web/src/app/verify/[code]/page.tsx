@@ -49,22 +49,9 @@ export default function CertificateVerificationPage({
       setErrorMsg(null);
 
       try {
-        let result = await apiClient.get<PublicVerificationResponse>(
+        const result = await apiClient.get<PublicVerificationResponse>(
           `/verify/${encodeURIComponent(rawCode)}`,
         );
-
-        if (result.status === 'not_found') {
-          try {
-            const passportResult = await apiClient.get<PublicVerificationResponse>(
-              `/passports/verify/${encodeURIComponent(rawCode)}`,
-            );
-            if (passportResult.status !== 'not_found') {
-              result = passportResult;
-            }
-          } catch {
-            // Keep certificate not_found
-          }
-        }
 
         if (isMounted) {
           setData(result);
