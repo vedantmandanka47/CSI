@@ -17,9 +17,15 @@ dotenv.config();
 
 async function main() {
   const prisma = new PrismaClient();
-  const guestRetentionDays = process.env.GUEST_RETENTION_DAYS
-    ? parseInt(process.env.GUEST_RETENTION_DAYS, 10)
-    : 90;
+  const rawRetention = process.env.GUEST_RETENTION_DAYS;
+  const guestRetentionDays = rawRetention !== undefined ? parseInt(rawRetention, 10) : 90;
+
+  if (Number.isNaN(guestRetentionDays) || guestRetentionDays < 1 || guestRetentionDays > 3650) {
+    console.error(
+      `[FATAL] GUEST_RETENTION_DAYS must be a valid positive integer between 1 and 3650 days. Received: "${rawRetention}"`,
+    );
+    process.exit(1);
+  }
 
   console.log('================================================================');
   console.log(' CSI GCET SB — DPDP Retention Purge & Anonymization Routine');
@@ -61,27 +67,19 @@ async function main() {
     let anonymizedCount = 0;
     if (concludedEvents.length > 0) {
       const eventIds = concludedEvents.map((e) => e.id);
-      const guests = await prisma.eventGuest.findMany({
-        where: {
-          eventId: { in: eventIds },
-          status: { not: 'anonymized' },
-        },
-        select: { id: true },
-      });
-
-      for (const guest of guests) {
-        await prisma.eventGuest.update({
-          where: { id: guest.id },
-          data: {
-            name: 'Anonymized Guest',
-            email: `anonymized-${guest.id}@anonymized.local`,
-            college: 'Anonymized',
-            phone: '0000000000',
-            status: 'anonymized',
-          },
-        });
-        anonymizedCount++;
-      }
+      // Atomic batch update avoiding N+1 queries while maintaining unique constraint on (event_id, email)
+      const updateResult = await prisma.$executeRawUnsafe(
+        `UPDATE "event_guests"
+         SET "name" = 'Anonymized Guest',
+             "email" = 'anonymized-' || "id"::text || '@anonymized.local',
+             "college" = 'Anonymized',
+             "phone" = '0000000000',
+             "status" = 'anonymized',
+             "updated_at" = NOW()
+         WHERE "event_id" = ANY($1::uuid[]) AND "status" != 'anonymized';`,
+        eventIds,
+      );
+      anonymizedCount = updateResult;
     }
     console.log(`[PASS] Anonymized ${anonymizedCount} guest registrations.`);
 

@@ -83,3 +83,4 @@ describe('AuthMiddleware (ARCH-05, AUD-SEC-04)', () => {
     expect(mockNext).toHaveBeenCalled();
   });
 });
+

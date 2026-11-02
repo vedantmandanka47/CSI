@@ -1,8 +1,8 @@
 import { Injectable, Logger, BadRequestException, NotFoundException } from '@nestjs/common';
 import { existsSync, mkdirSync, writeFileSync, readFileSync, unlinkSync } from 'fs';
-import { join, normalize } from 'path';
+import { join } from 'path';
 import { createHash } from 'crypto';
-import { resolveStorageDirectory } from '../../../common/storage/storage-path.util.js';
+import { resolveStorageDirectory, assertPathContained, isPathContained } from '../../../common/storage/storage-path.util.js';
 
 export interface SavedCertificateFile {
   storagePath: string;
@@ -32,20 +32,13 @@ export class CertificateStorageService {
     }
 
     const subDir = batchId && /^[a-zA-Z0-9_\-]+$/.test(batchId) ? batchId : 'direct';
-    const targetDir = normalize(join(this.storageRoot, subDir));
-
-    if (!targetDir.startsWith(this.storageRoot)) {
-      throw new BadRequestException('Path traversal attempt detected.');
-    }
+    const targetDir = assertPathContained(join(this.storageRoot, subDir), this.storageRoot);
 
     if (!existsSync(targetDir)) {
       mkdirSync(targetDir, { recursive: true });
     }
 
-    const targetFile = normalize(join(targetDir, `${certificateId}.pdf`));
-    if (!targetFile.startsWith(this.storageRoot)) {
-      throw new BadRequestException('Path traversal attempt detected.');
-    }
+    const targetFile = assertPathContained(join(targetDir, `${certificateId}.pdf`), this.storageRoot);
 
     writeFileSync(targetFile, pdfBuffer);
 
@@ -63,11 +56,11 @@ export class CertificateStorageService {
    * Reads a stored certificate PDF buffer from disk verifying path jail.
    */
   async getCertificatePdf(storagePath: string): Promise<Buffer> {
-    const absolutePath = normalize(join(this.storageRoot, storagePath));
-
-    if (!absolutePath.startsWith(this.storageRoot)) {
-      throw new BadRequestException('Invalid certificate storage path.');
-    }
+    const absolutePath = assertPathContained(
+      join(this.storageRoot, storagePath),
+      this.storageRoot,
+      'Invalid certificate storage path.',
+    );
 
     if (!existsSync(absolutePath)) {
       throw new NotFoundException('Certificate PDF file not found in storage.');
@@ -81,8 +74,8 @@ export class CertificateStorageService {
    */
   hasCertificatePdf(storagePath?: string | null): boolean {
     if (!storagePath) return false;
-    const absolutePath = normalize(join(this.storageRoot, storagePath));
-    return absolutePath.startsWith(this.storageRoot) && existsSync(absolutePath);
+    const absolutePath = join(this.storageRoot, storagePath);
+    return isPathContained(absolutePath, this.storageRoot) && existsSync(absolutePath);
   }
 
   /**
@@ -102,8 +95,8 @@ export class CertificateStorageService {
    * Deletes a certificate PDF from storage.
    */
   async deleteCertificatePdf(storagePath: string): Promise<void> {
-    const absolutePath = normalize(join(this.storageRoot, storagePath));
-    if (absolutePath.startsWith(this.storageRoot) && existsSync(absolutePath)) {
+    const absolutePath = join(this.storageRoot, storagePath);
+    if (isPathContained(absolutePath, this.storageRoot) && existsSync(absolutePath)) {
       try {
         unlinkSync(absolutePath);
       } catch (err: unknown) {

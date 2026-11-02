@@ -1,6 +1,11 @@
 import { EnvSchema } from '../../../../apps/api/src/config/env.js';
+import { generateKeyPairSync } from 'crypto';
 
 describe('Environment Schema Validation (ARCH-16, DEP-14, AUD-SEC-01)', () => {
+  const testEd25519Pair = generateKeyPairSync('ed25519');
+  const validEd25519Priv = testEd25519Pair.privateKey.export({ type: 'pkcs8', format: 'pem' }).toString();
+  const validEd25519Pub = testEd25519Pair.publicKey.export({ type: 'spki', format: 'pem' }).toString();
+
   const validBaseEnv = {
     NODE_ENV: 'development',
     API_PORT: '4000',
@@ -20,8 +25,8 @@ describe('Environment Schema Validation (ARCH-16, DEP-14, AUD-SEC-01)', () => {
     SESSION_SECRET: 'prod_unique_random_session_secret_at_least_32_bytes_entropy',
     CSRF_SECRET: 'prod_unique_random_csrf_secret_at_least_32_bytes_entropy_value',
     APP_ENCRYPTION_KEY: 'fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210',
-    QR_SIGNING_PRIVATE_KEY: 'prod_ed25519_private_key_actual_pem_content',
-    QR_SIGNING_PUBLIC_KEY: 'prod_ed25519_public_key_actual_pem_content',
+    QR_SIGNING_PRIVATE_KEY: validEd25519Priv,
+    QR_SIGNING_PUBLIC_KEY: validEd25519Pub,
     STORAGE_ROOT_DIR: '/var/data/csi/storage',
   };
 
@@ -142,18 +147,50 @@ describe('Environment Schema Validation (ARCH-16, DEP-14, AUD-SEC-01)', () => {
       }
     });
 
-    it('validates S3 storage driver requirements in production', () => {
+    it('rejects unsupported S3 storage driver in production', () => {
       const s3Prod = {
         ...validProdEnv,
         STORAGE_DRIVER: 's3',
-        STORAGE_ROOT_DIR: undefined,
-        S3_BUCKET: 'csi-assets',
-        S3_REGION: 'ap-south-1',
-        S3_ACCESS_KEY_ID: 'AKIA_TEST_KEY',
-        S3_SECRET_ACCESS_KEY: 'SECRET_TEST_KEY_VALUE',
       };
       const result = EnvSchema.safeParse(s3Prod);
-      expect(result.success).toBe(true);
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.issues.some((i) => i.path.includes('STORAGE_DRIVER'))).toBe(true);
+      }
+    });
+
+    it('rejects invalid, non-ed25519, or mismatched Ed25519 key-pair in production', () => {
+      const pair1 = generateKeyPairSync('ed25519');
+      const pair2 = generateKeyPairSync('ed25519');
+
+      // Mismatched keys
+      const mismatched = EnvSchema.safeParse({
+        ...validProdEnv,
+        QR_SIGNING_PRIVATE_KEY: pair1.privateKey.export({ type: 'pkcs8', format: 'pem' }).toString(),
+        QR_SIGNING_PUBLIC_KEY: pair2.publicKey.export({ type: 'spki', format: 'pem' }).toString(),
+      });
+      expect(mismatched.success).toBe(false);
+      if (!mismatched.success) {
+        expect(
+          mismatched.error.issues.some((i) =>
+            i.message.includes('QR_SIGNING_PUBLIC_KEY does not correspond to QR_SIGNING_PRIVATE_KEY'),
+          ),
+        ).toBe(true);
+      }
+
+      // Non-ed25519 key (e.g. RSA)
+      const rsaPair = generateKeyPairSync('rsa', { modulusLength: 2048 });
+      const rsaConfig = EnvSchema.safeParse({
+        ...validProdEnv,
+        QR_SIGNING_PRIVATE_KEY: rsaPair.privateKey.export({ type: 'pkcs8', format: 'pem' }).toString(),
+        QR_SIGNING_PUBLIC_KEY: rsaPair.publicKey.export({ type: 'spki', format: 'pem' }).toString(),
+      });
+      expect(rsaConfig.success).toBe(false);
+      if (!rsaConfig.success) {
+        expect(
+          rsaConfig.error.issues.some((i) => i.message.includes('must be an ed25519 key')),
+        ).toBe(true);
+      }
     });
   });
 });

@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import * as dotenv from 'dotenv';
+import { createPrivateKey, createPublicKey } from 'crypto';
 
 // Load .env file into process.env before validation
 dotenv.config();
@@ -102,7 +103,62 @@ export const EnvSchema = z
         });
       }
 
-      // Storage driver validation in production (DEP-14)
+      // Cryptographic validation of Ed25519 key-pair and key correspondence (Part 3.1)
+      if (
+        data.QR_SIGNING_PRIVATE_KEY &&
+        data.QR_SIGNING_PRIVATE_KEY !== 'dev_qr_private_key' &&
+        data.QR_SIGNING_PUBLIC_KEY &&
+        data.QR_SIGNING_PUBLIC_KEY !== 'dev_qr_public_key'
+      ) {
+        try {
+          const privKey = createPrivateKey(data.QR_SIGNING_PRIVATE_KEY);
+          if (privKey.asymmetricKeyType !== 'ed25519') {
+            ctx.addIssue({
+              code: z.ZodIssueCode.custom,
+              path: ['QR_SIGNING_PRIVATE_KEY'],
+              message: `QR_SIGNING_PRIVATE_KEY must be an ed25519 key, received '${privKey.asymmetricKeyType}'`,
+            });
+          } else {
+            const derivedPub = createPublicKey(privKey);
+            const derivedPubDer = derivedPub.export({ type: 'spki', format: 'der' });
+
+            try {
+              const pubKey = createPublicKey(data.QR_SIGNING_PUBLIC_KEY);
+              if (pubKey.asymmetricKeyType !== 'ed25519') {
+                ctx.addIssue({
+                  code: z.ZodIssueCode.custom,
+                  path: ['QR_SIGNING_PUBLIC_KEY'],
+                  message: `QR_SIGNING_PUBLIC_KEY must be an ed25519 key, received '${pubKey.asymmetricKeyType}'`,
+                });
+              } else {
+                const pubDer = pubKey.export({ type: 'spki', format: 'der' });
+                if (!derivedPubDer.equals(pubDer)) {
+                  ctx.addIssue({
+                    code: z.ZodIssueCode.custom,
+                    path: ['QR_SIGNING_PUBLIC_KEY'],
+                    message:
+                      'QR_SIGNING_PUBLIC_KEY does not correspond to QR_SIGNING_PRIVATE_KEY',
+                  });
+                }
+              }
+            } catch (pubErr) {
+              ctx.addIssue({
+                code: z.ZodIssueCode.custom,
+                path: ['QR_SIGNING_PUBLIC_KEY'],
+                message: `Invalid QR_SIGNING_PUBLIC_KEY: ${(pubErr as Error).message}`,
+              });
+            }
+          }
+        } catch (privErr) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['QR_SIGNING_PRIVATE_KEY'],
+            message: `Invalid QR_SIGNING_PRIVATE_KEY: ${(privErr as Error).message}`,
+          });
+        }
+      }
+
+      // Storage driver validation in production (DEP-14, Part 5)
       if (data.STORAGE_DRIVER === 'local' && !data.STORAGE_ROOT_DIR) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
@@ -113,34 +169,12 @@ export const EnvSchema = z
       }
 
       if (data.STORAGE_DRIVER === 's3') {
-        if (!data.S3_BUCKET) {
-          ctx.addIssue({
-            code: z.ZodIssueCode.custom,
-            path: ['S3_BUCKET'],
-            message: 'S3_BUCKET is required when STORAGE_DRIVER is s3',
-          });
-        }
-        if (!data.S3_REGION) {
-          ctx.addIssue({
-            code: z.ZodIssueCode.custom,
-            path: ['S3_REGION'],
-            message: 'S3_REGION is required when STORAGE_DRIVER is s3',
-          });
-        }
-        if (!data.S3_ACCESS_KEY_ID) {
-          ctx.addIssue({
-            code: z.ZodIssueCode.custom,
-            path: ['S3_ACCESS_KEY_ID'],
-            message: 'S3_ACCESS_KEY_ID is required when STORAGE_DRIVER is s3',
-          });
-        }
-        if (!data.S3_SECRET_ACCESS_KEY) {
-          ctx.addIssue({
-            code: z.ZodIssueCode.custom,
-            path: ['S3_SECRET_ACCESS_KEY'],
-            message: 'S3_SECRET_ACCESS_KEY is required when STORAGE_DRIVER is s3',
-          });
-        }
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['STORAGE_DRIVER'],
+          message:
+            'S3 storage driver is not implemented. Deployments must use persistent local storage with STORAGE_DRIVER=local and STORAGE_ROOT_DIR set to a persistent volume mount.',
+        });
       }
     }
   });
