@@ -11,6 +11,7 @@ import { CertificateIssuanceService } from './issuance/certificate-issuance.serv
 import { VerificationCodeService } from './verification/verification-code.service.js';
 import { CertificateVerificationService } from './verification/certificate-verification.service.js';
 import { PublicVerificationRateLimitGuard } from './verification/public-verification-rate-limit.guard.js';
+import { RateLimiterService } from '../../common/services/rate-limiter.service.js';
 import { CertificatesController } from './controllers/certificates.controller.js';
 import { MeCertificatesController } from './controllers/me-certificates.controller.js';
 import { PublicVerificationController } from './controllers/public-verification.controller.js';
@@ -37,6 +38,7 @@ import { PassportsModule } from '../passports/passports.module.js';
     VerificationCodeService,
     CertificateVerificationService,
     PublicVerificationRateLimitGuard,
+    RateLimiterService,
   ],
   exports: [
     CertificateTemplateEngineService,
@@ -47,6 +49,8 @@ import { PassportsModule } from '../passports/passports.module.js';
     CertificateNumberGeneratorService,
     VerificationCodeService,
     CertificateVerificationService,
+    PublicVerificationRateLimitGuard,
+    RateLimiterService,
     FontManagerService,
     AssetManagerService,
     LayoutEngineService,

@@ -1,8 +1,9 @@
 import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
 import { existsSync, mkdirSync, writeFileSync, readFileSync, unlinkSync } from 'fs';
-import { resolve, join, normalize, extname } from 'path';
+import { join, extname } from 'path';
 import { createHash } from 'crypto';
 import { ErrorCode } from '@csi/shared';
+import { resolveStorageDirectory, assertPathContained, isPathContained } from '../../common/storage/storage-path.util.js';
 
 export interface SavedAssetFile {
   storagePath: string;
@@ -17,19 +18,7 @@ export class WorkspaceAssetStorageService {
   private readonly maxFileSizeBytes = 10 * 1024 * 1024; // 10 MB limit (RR:SEC-09)
 
   constructor() {
-    const cwd = process.cwd();
-    const candidateRoot = resolve(cwd, 'apps/api/storage/workspaces/assets');
-    const candidateApp = resolve(cwd, 'storage/workspaces/assets');
-
-    if (existsSync(resolve(cwd, 'apps/api'))) {
-      this.storageRoot = candidateRoot;
-    } else {
-      this.storageRoot = candidateApp;
-    }
-
-    if (!existsSync(this.storageRoot)) {
-      mkdirSync(this.storageRoot, { recursive: true });
-    }
+    this.storageRoot = resolveStorageDirectory('workspaces/assets');
   }
 
   /**
@@ -139,28 +128,22 @@ export class WorkspaceAssetStorageService {
 
     // Sanitize original file name
     const sanitizedName = originalFileName.replace(/[^a-zA-Z0-9_.-]/g, '_');
-    const committeeDir = normalize(join(this.storageRoot, committeeId));
-
-    if (!committeeDir.startsWith(this.storageRoot)) {
-      throw new BadRequestException({
-        code: ErrorCode.VALIDATION_ERROR,
-        message: 'Path traversal attempt detected in committee storage directory.',
-      });
-    }
+    const committeeDir = assertPathContained(
+      join(this.storageRoot, committeeId),
+      this.storageRoot,
+      'Path traversal attempt detected in committee storage directory.',
+    );
 
     if (!existsSync(committeeDir)) {
       mkdirSync(committeeDir, { recursive: true });
     }
 
     const fileNameOnDisk = `${assetId}_${sanitizedName}`;
-    const targetFile = normalize(join(committeeDir, fileNameOnDisk));
-
-    if (!targetFile.startsWith(committeeDir)) {
-      throw new BadRequestException({
-        code: ErrorCode.VALIDATION_ERROR,
-        message: 'Path traversal attempt detected in target file path.',
-      });
-    }
+    const targetFile = assertPathContained(
+      join(committeeDir, fileNameOnDisk),
+      committeeDir,
+      'Path traversal attempt detected in target file path.',
+    );
 
     writeFileSync(targetFile, fileBuffer);
 
@@ -179,14 +162,11 @@ export class WorkspaceAssetStorageService {
    * Reads an asset file buffer from disk verifying path jail.
    */
   async getAssetFile(storagePath: string): Promise<Buffer> {
-    const absolutePath = normalize(join(this.storageRoot, storagePath));
-
-    if (!absolutePath.startsWith(this.storageRoot)) {
-      throw new BadRequestException({
-        code: ErrorCode.VALIDATION_ERROR,
-        message: 'Invalid asset storage path.',
-      });
-    }
+    const absolutePath = assertPathContained(
+      join(this.storageRoot, storagePath),
+      this.storageRoot,
+      'Invalid asset storage path.',
+    );
 
     if (!existsSync(absolutePath)) {
       throw new NotFoundException({
@@ -203,8 +183,8 @@ export class WorkspaceAssetStorageService {
    */
   hasAssetFile(storagePath?: string | null): boolean {
     if (!storagePath) return false;
-    const absolutePath = normalize(join(this.storageRoot, storagePath));
-    return absolutePath.startsWith(this.storageRoot) && existsSync(absolutePath);
+    const absolutePath = join(this.storageRoot, storagePath);
+    return isPathContained(absolutePath, this.storageRoot) && existsSync(absolutePath);
   }
 
   /**
@@ -212,8 +192,8 @@ export class WorkspaceAssetStorageService {
    */
   async deleteAssetFile(storagePath?: string | null): Promise<void> {
     if (!storagePath) return;
-    const absolutePath = normalize(join(this.storageRoot, storagePath));
-    if (absolutePath.startsWith(this.storageRoot) && existsSync(absolutePath)) {
+    const absolutePath = join(this.storageRoot, storagePath);
+    if (isPathContained(absolutePath, this.storageRoot) && existsSync(absolutePath)) {
       unlinkSync(absolutePath);
     }
   }

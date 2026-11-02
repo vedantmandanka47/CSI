@@ -1,4 +1,4 @@
-import { Injectable, NestMiddleware } from '@nestjs/common';
+import { Injectable, NestMiddleware, Logger } from '@nestjs/common';
 import { Request, Response, NextFunction } from 'express';
 import { PrismaService } from '../../infra/prisma/prisma.service.js';
 import { hashToken } from '../crypto/tokens.js';
@@ -6,6 +6,8 @@ import { RoleCode, computeEffectivePermissions } from '@csi/shared';
 
 @Injectable()
 export class AuthMiddleware implements NestMiddleware {
+  private readonly logger = new Logger(AuthMiddleware.name);
+
   constructor(private prisma: PrismaService) {}
 
   async use(req: Request, _res: Response, next: NextFunction): Promise<void> {
@@ -58,8 +60,13 @@ export class AuthMiddleware implements NestMiddleware {
         permissions,
       };
       reqWithAuth.sessionId = session.id;
-    } catch {
-      // Unhandled lookups leave req.user undefined; handled by DenyByDefaultGuard
+    } catch (err: unknown) {
+      // AUD-SEC-04: Log diagnostic context without leaking sensitive credentials
+      const reqId = (req.headers['x-request-id'] as string) || 'unknown';
+      this.logger.warn(
+        `[Request ${reqId}] Session retrieval exception: ${(err as Error).message}`,
+      );
+      // Leaves req.user undefined; handled fail-closed by DenyByDefaultGuard
     }
     next();
   }

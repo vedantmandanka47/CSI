@@ -52,6 +52,14 @@ async function runMigrationTest() {
     'certificate_batches',
     'certificates',
     'passports',
+    'tasks',
+    'checklists',
+    'checklist_items',
+    'checklist_runs',
+    'committee_assets',
+    'academic_terms',
+    'term_snapshots',
+    'term_rollovers',
   ];
 
   try {

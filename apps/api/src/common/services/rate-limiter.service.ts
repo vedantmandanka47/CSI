@@ -62,6 +62,53 @@ export class RateLimiterService implements OnModuleDestroy {
   }
 
   /**
+   * Asserts rate limit using in-memory sliding window and sets rate-limiting HTTP response headers (AUD-ARCH-02).
+   */
+  assertLimitWithHeaders(
+    key: string,
+    maxRequests: number,
+    windowMs: number,
+    res?: { setHeader?(name: string, value: string): void },
+    customMessage?: string,
+  ): void {
+    const now = Date.now();
+    const windowStart = now - windowMs;
+
+    let record = this.store.get(key);
+    if (!record) {
+      record = { timestamps: [] };
+      this.store.set(key, record);
+    }
+
+    record.timestamps = record.timestamps.filter((ts) => ts > windowStart);
+    const currentCount = record.timestamps.length;
+    const remaining = Math.max(0, maxRequests - currentCount - 1);
+    const resetTimeSeconds = Math.ceil(windowMs / 1000);
+
+    if (res && typeof res.setHeader === 'function') {
+      res.setHeader('X-RateLimit-Limit', maxRequests.toString());
+      res.setHeader('X-RateLimit-Remaining', remaining.toString());
+      res.setHeader('X-RateLimit-Reset', resetTimeSeconds.toString());
+    }
+
+    if (currentCount >= maxRequests) {
+      if (res && typeof res.setHeader === 'function') {
+        res.setHeader('Retry-After', resetTimeSeconds.toString());
+      }
+      throw new HttpException(
+        {
+          statusCode: HttpStatus.TOO_MANY_REQUESTS,
+          code: 'RATE_LIMIT_EXCEEDED',
+          message: customMessage || 'Too many requests. Please try again later.',
+        },
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+
+    record.timestamps.push(now);
+  }
+
+  /**
    * Resets limit for a specific key (e.g. after successful login)
    */
   reset(key: string): void {

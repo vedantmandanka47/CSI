@@ -26,7 +26,7 @@ import {
   PublicEventDetail,
   RegistrationResponse,
 } from '@csi/shared';
-import { Public, RequirePermission, ReqUser } from '../../common/decorators/index.js';
+import { Public, RequirePermission, ReqUser, ExemptCsrf } from '../../common/decorators/index.js';
 import { RateLimiterService } from '../../common/services/rate-limiter.service.js';
 
 @Controller('events')
@@ -125,6 +125,7 @@ export class EventsController {
    * Public guest event registration with DPDP consent
    */
   @Public()
+  @ExemptCsrf()
   @Post(':id/guests')
   @HttpCode(HttpStatus.OK)
   async registerGuest(

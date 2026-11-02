@@ -18,6 +18,8 @@ import {
   CreateEventInput,
   CreateEventRawInput,
   UpdateEventInput,
+  canTransitionEvent,
+  VALID_EVENT_TRANSITIONS,
 } from '@csi/shared';
 
 interface LockedEventRow {
@@ -869,6 +871,21 @@ export class EventsService {
         throw new BadRequestException({
           code: ErrorCode.CAPACITY_EXCEEDED,
           message: `Event capacity (${targetCapacity}) cannot exceed venue maximum capacity (${venue.capacity}).`,
+        });
+      }
+    }
+
+    // AUD-LOGIC-01: Enforce canonical state transitions (F-03 / F-08)
+    if (input.state && input.state !== existing.state) {
+      const isAllowed = canTransitionEvent(
+        existing.state as EventState,
+        input.state as EventState,
+      );
+      if (!isAllowed) {
+        const allowed = VALID_EVENT_TRANSITIONS[existing.state as EventState] || [];
+        throw new BadRequestException({
+          code: ErrorCode.VALIDATION_ERROR,
+          message: `Illegal event state transition from '${existing.state}' to '${input.state}'. Allowed transitions: ${allowed.length > 0 ? allowed.join(', ') : 'none'}.`,
         });
       }
     }
