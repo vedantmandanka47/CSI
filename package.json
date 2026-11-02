@@ -34,6 +34,7 @@
     "check:content": "node scripts/validation/check-content.mjs",
     "backup": "tsx scripts/database/backup.ts",
     "restore:drill": "tsx scripts/database/restore-drill.ts",
+    "maintenance:retention-purge": "tsx scripts/maintenance/run-retention-purge.ts",
     "audit:deps": "npm audit --omit=dev --audit-level=critical"
   },
   "devDependencies": {

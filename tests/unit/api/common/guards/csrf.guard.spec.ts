@@ -1,9 +1,10 @@
 import { ExecutionContext, ForbiddenException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { CsrfGuard } from '../../../../../apps/api/src/common/guards/csrf.guard.js';
+import { CSRF_EXEMPT_KEY } from '../../../../../apps/api/src/common/decorators/csrf-exempt.decorator.js';
 import { Request } from 'express';
 
-describe('CsrfGuard (ARCH-14, SEC-04)', () => {
+describe('CsrfGuard (ARCH-14, SEC-04, AUD-SEC-02)', () => {
   let guard: CsrfGuard;
   let reflector: Reflector;
   let mockRequest: Partial<Request>;
@@ -37,11 +38,21 @@ describe('CsrfGuard (ARCH-14, SEC-04)', () => {
     expect(guard.canActivate(mockContext)).toBe(true);
   });
 
-  it('allows mutating requests if route is marked as @Public or @ExemptCsrf', () => {
+  it('allows mutating requests if route is explicitly marked with @ExemptCsrf', () => {
     mockRequest.method = 'POST';
-    jest.spyOn(reflector, 'getAllAndOverride').mockReturnValue(true);
+    jest.spyOn(reflector, 'getAllAndOverride').mockImplementation((key) => {
+      if (key === CSRF_EXEMPT_KEY) return true;
+      return false;
+    });
 
     expect(guard.canActivate(mockContext)).toBe(true);
+  });
+
+  it('strictly enforces CSRF on mutating requests when @ExemptCsrf is missing (AUD-SEC-02)', () => {
+    mockRequest.method = 'POST';
+    jest.spyOn(reflector, 'getAllAndOverride').mockReturnValue(false);
+
+    expect(() => guard.canActivate(mockContext)).toThrow(ForbiddenException);
   });
 
   it('throws ForbiddenException (CSRF_INVALID) on POST when cookies or header are missing', () => {
@@ -75,4 +86,3 @@ describe('CsrfGuard (ARCH-14, SEC-04)', () => {
     expect(guard.canActivate(mockContext)).toBe(true);
   });
 });
-

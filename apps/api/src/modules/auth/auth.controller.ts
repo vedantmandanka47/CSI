@@ -19,7 +19,7 @@ import {
   VerifyEmailPayloadSchema,
   CurrentUser,
 } from '@csi/shared';
-import { Public, Authenticated, ReqUser } from '../../common/decorators/index.js';
+import { Public, Authenticated, ReqUser, ExemptCsrf } from '../../common/decorators/index.js';
 import { RateLimiterService } from '../../common/services/rate-limiter.service.js';
 import { generateSecureToken } from '../../common/crypto/tokens.js';
 import { env } from '../../config/env.js';
@@ -55,6 +55,7 @@ export class AuthController {
    * User Signup / Registration
    */
   @Public()
+  @ExemptCsrf()
   @Post('signup')
   async signup(
     @Body() rawBody: unknown,
@@ -80,6 +81,7 @@ export class AuthController {
    * Email Verification
    */
   @Public()
+  @ExemptCsrf()
   @Post('verify-email')
   @HttpCode(HttpStatus.OK)
   async verifyEmail(@Body() rawBody: unknown, @Req() req: Request) {
@@ -100,6 +102,7 @@ export class AuthController {
    * User Credentials Login (Argon2id + Session Cookie)
    */
   @Public()
+  @ExemptCsrf()
   @Post('login')
   @HttpCode(HttpStatus.OK)
   async login(
@@ -190,6 +193,7 @@ export class AuthController {
    * Forgot Password Request
    */
   @Public()
+  @ExemptCsrf()
   @Post('forgot-password')
   @HttpCode(HttpStatus.OK)
   async forgotPassword(@Body() rawBody: unknown, @Req() req: Request) {
@@ -213,6 +217,7 @@ export class AuthController {
    * Reset Password with Token
    */
   @Public()
+  @ExemptCsrf()
   @Post('reset-password')
   @HttpCode(HttpStatus.OK)
   async resetPassword(@Body() rawBody: unknown, @Req() req: Request) {

@@ -399,5 +399,38 @@ describe('EventsService', () => {
         ),
       ).rejects.toThrow(ConflictException);
     });
+
+    it('enforces valid event state transitions on updateEvent (AUD-LOGIC-01)', async () => {
+      const existingEvent = {
+        id: 'event-uuid-1',
+        title: 'Existing Event',
+        slug: 'existing-event',
+        state: EventState.DRAFT,
+        startsAt: new Date('2026-11-20T10:00:00Z'),
+        endsAt: new Date('2026-11-20T12:00:00Z'),
+        capacity: 50,
+        venueId: null,
+      };
+
+      mockPrisma.event.findUnique.mockResolvedValueOnce(existingEvent);
+      mockPrisma.event.update.mockResolvedValueOnce({
+        ...existingEvent,
+        state: EventState.PUBLISHED,
+      });
+
+      // Valid transition: draft -> published
+      const updated = await service.updateEvent(
+        'event-uuid-1',
+        { state: EventState.PUBLISHED },
+        'admin-user',
+      );
+      expect(updated.state).toBe(EventState.PUBLISHED);
+
+      // Invalid transition: draft -> completed
+      mockPrisma.event.findUnique.mockResolvedValueOnce(existingEvent);
+      await expect(
+        service.updateEvent('event-uuid-1', { state: EventState.COMPLETED }, 'admin-user'),
+      ).rejects.toThrow(BadRequestException);
+    });
   });
 });

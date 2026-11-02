@@ -1,7 +1,8 @@
 import { Injectable, Logger, BadRequestException, NotFoundException } from '@nestjs/common';
 import { existsSync, mkdirSync, writeFileSync, readFileSync, unlinkSync } from 'fs';
-import { resolve, join, normalize } from 'path';
+import { join, normalize } from 'path';
 import { createHash } from 'crypto';
+import { resolveStorageDirectory } from '../../../common/storage/storage-path.util.js';
 
 export interface SavedCertificateFile {
   storagePath: string;
@@ -15,19 +16,7 @@ export class CertificateStorageService {
   private readonly storageRoot: string;
 
   constructor() {
-    const cwd = process.cwd();
-    const candidateRoot = resolve(cwd, 'apps/api/storage/certificates');
-    const candidateApp = resolve(cwd, 'storage/certificates');
-
-    if (existsSync(resolve(cwd, 'apps/api'))) {
-      this.storageRoot = candidateRoot;
-    } else {
-      this.storageRoot = candidateApp;
-    }
-
-    if (!existsSync(this.storageRoot)) {
-      mkdirSync(this.storageRoot, { recursive: true });
-    }
+    this.storageRoot = resolveStorageDirectory('certificates');
   }
 
   /**

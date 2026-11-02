@@ -2,35 +2,16 @@ import {
   Injectable,
   CanActivate,
   ExecutionContext,
-  HttpException,
-  HttpStatus,
 } from '@nestjs/common';
 import { Request, Response } from 'express';
-
-interface RateLimitRecord {
-  timestamps: number[];
-}
+import { RateLimiterService } from '../../../common/services/rate-limiter.service.js';
 
 @Injectable()
 export class PublicVerificationRateLimitGuard implements CanActivate {
   private readonly windowMs = 60 * 1000; // 1 minute window
   private readonly maxRequests = 30; // Max 30 requests per minute per IP
-  private readonly store = new Map<string, RateLimitRecord>();
 
-  constructor() {
-    // Periodic cleanup of stale IP records every 5 minutes
-    setInterval(() => {
-      const now = Date.now();
-      for (const [ip, record] of this.store.entries()) {
-        const active = record.timestamps.filter((ts) => now - ts < this.windowMs);
-        if (active.length === 0) {
-          this.store.delete(ip);
-        } else {
-          record.timestamps = active;
-        }
-      }
-    }, 5 * 60 * 1000).unref();
-  }
+  constructor(private readonly rateLimiter: RateLimiterService) {}
 
   canActivate(context: ExecutionContext): boolean {
     const http = context.switchToHttp();
@@ -40,42 +21,15 @@ export class PublicVerificationRateLimitGuard implements CanActivate {
     // SEC-28 & AUD-SEC-01: Trust Express req.ip (configured via trust proxy) over raw client-spoofed headers
     const clientIp = req.ip || req.socket.remoteAddress || 'unknown';
 
-    const now = Date.now();
-    let record = this.store.get(clientIp);
+    // AUD-ARCH-02: Delegate sliding window enforcement and headers to centralized RateLimiterService
+    this.rateLimiter.assertLimitWithHeaders(
+      `public-verification:${clientIp}`,
+      this.maxRequests,
+      this.windowMs,
+      res,
+      'Too many certificate verification requests. Please try again later.',
+    );
 
-    if (!record) {
-      record = { timestamps: [] };
-      this.store.set(clientIp, record);
-    }
-
-    // Filter out timestamps outside the active window
-    record.timestamps = record.timestamps.filter((ts) => now - ts < this.windowMs);
-
-    const currentCount = record.timestamps.length;
-    const remaining = Math.max(0, this.maxRequests - currentCount - 1);
-    const resetTimeSeconds = Math.ceil(this.windowMs / 1000);
-
-    if (res && res.setHeader) {
-      res.setHeader('X-RateLimit-Limit', this.maxRequests.toString());
-      res.setHeader('X-RateLimit-Remaining', remaining.toString());
-      res.setHeader('X-RateLimit-Reset', resetTimeSeconds.toString());
-    }
-
-    if (currentCount >= this.maxRequests) {
-      if (res && res.setHeader) {
-        res.setHeader('Retry-After', resetTimeSeconds.toString());
-      }
-      throw new HttpException(
-        {
-          statusCode: HttpStatus.TOO_MANY_REQUESTS,
-          code: 'RATE_LIMIT_EXCEEDED',
-          message: 'Too many certificate verification requests. Please try again later.',
-        },
-        HttpStatus.TOO_MANY_REQUESTS,
-      );
-    }
-
-    record.timestamps.push(now);
     return true;
   }
 }

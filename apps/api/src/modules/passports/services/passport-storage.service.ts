@@ -1,7 +1,8 @@
 import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
-import { existsSync, mkdirSync, writeFileSync, readFileSync, unlinkSync } from 'fs';
-import { resolve, join, normalize } from 'path';
+import { existsSync, writeFileSync, readFileSync, unlinkSync } from 'fs';
+import { join, normalize } from 'path';
 import { createHash } from 'crypto';
+import { resolveStorageDirectory } from '../../../common/storage/storage-path.util.js';
 
 export interface SavedPassportFile {
   storagePath: string;
@@ -14,19 +15,7 @@ export class PassportStorageService {
   private readonly storageRoot: string;
 
   constructor() {
-    const cwd = process.cwd();
-    const candidateRoot = resolve(cwd, 'apps/api/storage/passports');
-    const candidateApp = resolve(cwd, 'storage/passports');
-
-    if (existsSync(resolve(cwd, 'apps/api'))) {
-      this.storageRoot = candidateRoot;
-    } else {
-      this.storageRoot = candidateApp;
-    }
-
-    if (!existsSync(this.storageRoot)) {
-      mkdirSync(this.storageRoot, { recursive: true });
-    }
+    this.storageRoot = resolveStorageDirectory('passports');
   }
 
   /**

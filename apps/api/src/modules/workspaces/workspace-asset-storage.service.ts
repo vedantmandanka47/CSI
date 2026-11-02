@@ -1,8 +1,9 @@
 import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
 import { existsSync, mkdirSync, writeFileSync, readFileSync, unlinkSync } from 'fs';
-import { resolve, join, normalize, extname } from 'path';
+import { join, normalize, extname } from 'path';
 import { createHash } from 'crypto';
 import { ErrorCode } from '@csi/shared';
+import { resolveStorageDirectory } from '../../common/storage/storage-path.util.js';
 
 export interface SavedAssetFile {
   storagePath: string;
@@ -17,19 +18,7 @@ export class WorkspaceAssetStorageService {
   private readonly maxFileSizeBytes = 10 * 1024 * 1024; // 10 MB limit (RR:SEC-09)
 
   constructor() {
-    const cwd = process.cwd();
-    const candidateRoot = resolve(cwd, 'apps/api/storage/workspaces/assets');
-    const candidateApp = resolve(cwd, 'storage/workspaces/assets');
-
-    if (existsSync(resolve(cwd, 'apps/api'))) {
-      this.storageRoot = candidateRoot;
-    } else {
-      this.storageRoot = candidateApp;
-    }
-
-    if (!existsSync(this.storageRoot)) {
-      mkdirSync(this.storageRoot, { recursive: true });
-    }
+    this.storageRoot = resolveStorageDirectory('workspaces/assets');
   }
 
   /**

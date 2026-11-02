@@ -6,6 +6,7 @@ import { PassportAggregationService } from './services/passport-aggregation.serv
 import { PassportPdfService } from './services/passport-pdf.service.js';
 import { PassportVerificationService } from './services/passport-verification.service.js';
 import { PassportExportService } from './services/passport-export.service.js';
+import { RateLimiterService } from '../../common/services/rate-limiter.service.js';
 import { MePassportController } from './controllers/me-passport.controller.js';
 import { PassportsController } from './controllers/passports.controller.js';
 
@@ -18,6 +19,7 @@ import { PassportsController } from './controllers/passports.controller.js';
     PassportPdfService,
     PassportVerificationService,
     PassportExportService,
+    RateLimiterService,
   ],
   exports: [
     PassportStorageService,
@@ -25,6 +27,7 @@ import { PassportsController } from './controllers/passports.controller.js';
     PassportPdfService,
     PassportVerificationService,
     PassportExportService,
+    RateLimiterService,
   ],
 })
 export class PassportsModule {}
