@@ -15,17 +15,53 @@ const apiEnvPath = resolve(join('apps', 'api', '.env'));
 dotenv.config({ path: apiEnvPath });
 dotenv.config();
 
-async function main() {
-  const prisma = new PrismaClient();
-  const rawRetention = process.env.GUEST_RETENTION_DAYS;
-  const guestRetentionDays = rawRetention !== undefined ? parseInt(rawRetention, 10) : 90;
+/**
+ * Strict validation for GUEST_RETENTION_DAYS configuration (AUD-OPS-01 / Finding 2.5).
+ * Must be a positive integer between 1 and 3650 days.
+ * Rejects empty strings, decimals, negatives, zeroes, non-numeric strings, and strings with arbitrary text prefixes/suffixes (e.g., '90days').
+ */
+export function validateGuestRetentionDays(rawRetention: string | undefined): number {
+  if (rawRetention === undefined || rawRetention === null) {
+    return 90; // Default when not specified
+  }
 
-  if (Number.isNaN(guestRetentionDays) || guestRetentionDays < 1 || guestRetentionDays > 3650) {
-    console.error(
-      `[FATAL] GUEST_RETENTION_DAYS must be a valid positive integer between 1 and 3650 days. Received: "${rawRetention}"`,
+  const trimmed = rawRetention.trim();
+  if (trimmed.length === 0) {
+    throw new Error('GUEST_RETENTION_DAYS cannot be empty or whitespace.');
+  }
+
+  // Strictly match positive integers without decimals or non-digit characters
+  if (!/^[1-9]\d*$/.test(trimmed)) {
+    throw new Error(
+      `GUEST_RETENTION_DAYS must be a strictly positive whole integer (no decimals, units, leading zeros, or trailing text). Received: "${rawRetention}"`,
     );
+  }
+
+  const days = Number(trimmed);
+  if (!Number.isSafeInteger(days)) {
+    throw new Error(`GUEST_RETENTION_DAYS value "${rawRetention}" exceeds safe integer range.`);
+  }
+
+  if (days < 1 || days > 3650) {
+    throw new Error(
+      `GUEST_RETENTION_DAYS must be between 1 and 3650 days (approx. 10 years). Received: ${days}`,
+    );
+  }
+
+  return days;
+}
+
+async function main() {
+  const rawRetention = process.env.GUEST_RETENTION_DAYS;
+  let guestRetentionDays: number;
+  try {
+    guestRetentionDays = validateGuestRetentionDays(rawRetention);
+  } catch (err: unknown) {
+    console.error(`[FATAL] Configuration validation error: ${err instanceof Error ? err.message : String(err)}`);
     process.exit(1);
   }
+
+  const prisma = new PrismaClient();
 
   console.log('================================================================');
   console.log(' CSI GCET SB — DPDP Retention Purge & Anonymization Routine');
@@ -111,4 +147,6 @@ async function main() {
   }
 }
 
-main();
+if (require.main === module) {
+  main();
+}

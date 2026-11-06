@@ -7,6 +7,140 @@ const testDbUrl =
   process.env.MIGRATION_DATABASE_URL ||
   'postgresql://csi_migrator:<choose-locally>@localhost:5432/csi_gcet_test';
 
+interface PermissionSnapshot {
+  hasSchemaUsage: boolean;
+  tableGrantsCount: number;
+  sequenceGrantsCount: number;
+  hasSequenceUsage: boolean;
+  hasSequenceSelect: boolean;
+  defaultAclCount: number;
+  tableGrants: Array<{ table_name: string; privilege_type: string }>;
+}
+
+async function inspectRuntimePermissions(client: Client): Promise<PermissionSnapshot> {
+  const roleCheck = await client.query<{ exists: boolean }>(
+    `SELECT EXISTS(SELECT 1 FROM pg_roles WHERE rolname = 'csi_app') AS exists;`,
+  );
+  if (!roleCheck.rows[0]?.exists) {
+    return {
+      hasSchemaUsage: false,
+      tableGrantsCount: 0,
+      sequenceGrantsCount: 0,
+      hasSequenceUsage: false,
+      hasSequenceSelect: false,
+      defaultAclCount: 0,
+      tableGrants: [],
+    };
+  }
+
+  // 1. Schema USAGE (checking explicit grants to csi_app via aclexplode)
+  const usageRes = await client.query<{ has_usage: boolean }>(
+    `SELECT EXISTS (
+       SELECT 1 
+       FROM pg_namespace n,
+            LATERAL aclexplode(COALESCE(n.nspacl, acldefault('n', n.nspowner))) acl
+       WHERE n.nspname = 'public' 
+         AND acl.grantee = (SELECT oid FROM pg_roles WHERE rolname = 'csi_app')
+         AND acl.privilege_type = 'USAGE'
+     ) AS has_usage;`,
+  );
+  const hasSchemaUsage = usageRes.rows[0]?.has_usage === true;
+
+  // 2. Table grants in public schema
+  const tablesRes = await client.query<{ table_name: string; privilege_type: string }>(
+    `SELECT table_name, privilege_type 
+     FROM information_schema.role_table_grants 
+     WHERE grantee = 'csi_app' AND table_schema = 'public'
+     ORDER BY table_name, privilege_type;`,
+  );
+
+  // 3. Sequence grants (verifying both USAGE and SELECT privileges on test sequence)
+  const seqPrivRes = await client.query<{ has_usage: boolean; has_select: boolean }>(
+    `SELECT 
+       has_sequence_privilege('csi_app', 'public.test_lifecycle_seq', 'USAGE') AS has_usage,
+       has_sequence_privilege('csi_app', 'public.test_lifecycle_seq', 'SELECT') AS has_select;`,
+  );
+  const hasSequenceUsage = seqPrivRes.rows[0]?.has_usage === true;
+  const hasSequenceSelect = seqPrivRes.rows[0]?.has_select === true;
+
+  const seqCountRes = await client.query<{ count: string }>(
+    `SELECT COUNT(*)::text AS count
+     FROM information_schema.sequences s
+     WHERE s.sequence_schema = 'public'
+       AND has_sequence_privilege('csi_app', s.sequence_schema || '.' || s.sequence_name, 'USAGE');`,
+  );
+  const sequenceGrantsCount = parseInt(seqCountRes.rows[0]?.count || '0', 10);
+
+  // 4. Default ACLs for csi_app
+  const aclRes = await client.query<{ count: string }>(
+    `SELECT COUNT(*)::text AS count
+     FROM pg_default_acl a 
+     JOIN pg_roles r ON a.defaclrole = r.oid 
+     WHERE defaclnamespace = (SELECT oid FROM pg_namespace WHERE nspname = 'public')
+       AND a.defaclacl::text LIKE '%csi_app%';`,
+  );
+  const defaultAclCount = parseInt(aclRes.rows[0]?.count || '0', 10);
+
+  return {
+    hasSchemaUsage,
+    tableGrantsCount: tablesRes.rows.length,
+    sequenceGrantsCount,
+    hasSequenceUsage,
+    hasSequenceSelect,
+    defaultAclCount,
+    tableGrants: tablesRes.rows,
+  };
+}
+
+export interface MigrationLifecycleSafetyCheck {
+  valid: boolean;
+  status: 'PERMITTED' | 'REFUSED_NON_TEST_DB' | 'REFUSED_NOT_DISPOSABLE' | 'REFUSED_PRODUCTION';
+  error?: string;
+}
+
+/**
+ * Validates that migration lifecycle testing (with destructive DOWN rollbacks) is only executed
+ * against an explicitly designated disposable test database (Requirement 5).
+ */
+export function validateMigrationLifecycleSafety(
+  targetDb: string,
+  env: NodeJS.ProcessEnv = process.env,
+): MigrationLifecycleSafetyCheck {
+  if (env.NODE_ENV === 'production') {
+    return {
+      valid: false,
+      status: 'REFUSED_PRODUCTION',
+      error: '[SAFETY FATAL] Migration lifecycle test is strictly prohibited in production mode (NODE_ENV=production).',
+    };
+  }
+
+  const normalizedDb = (targetDb || '').trim().toLowerCase();
+  if (normalizedDb !== 'csi_gcet_test') {
+    return {
+      valid: false,
+      status: 'REFUSED_NON_TEST_DB',
+      error: `[SAFETY FATAL] Migration lifecycle test refuses to run against "${targetDb}". Target MUST be strictly "csi_gcet_test".`,
+    };
+  }
+
+  const isExplicitlyDisposable =
+    env.TEST_DATABASE_DISPOSABLE === 'true' ||
+    env.ALLOW_DESTRUCTIVE_DOWN_TESTING === 'true';
+
+  if (!isExplicitlyDisposable) {
+    return {
+      valid: false,
+      status: 'REFUSED_NOT_DISPOSABLE',
+      error:
+        `[SAFETY FATAL] Test database "${targetDb}" is not explicitly confirmed as disposable.\n` +
+        `Executing destructive DOWN rollbacks requires setting TEST_DATABASE_DISPOSABLE=true or ALLOW_DESTRUCTIVE_DOWN_TESTING=true in environment.\n` +
+        `Refusing destructive migration lifecycle testing to prevent unintended data loss.`,
+    };
+  }
+
+  return { valid: true, status: 'PERMITTED' };
+}
+
 async function runMigrationTest() {
   console.log('🧪 Starting Migration Lifecycle Test (INT-11: UP -> DOWN -> UP)...');
   console.log(`📡 Connecting to test database: csi_gcet_test`);
@@ -14,15 +148,16 @@ async function runMigrationTest() {
   const client = new Client({ connectionString: testDbUrl });
   await client.connect();
 
-  // Strict fail-closed target verification (U1 / Finding F-01)
+  // Strict fail-closed target and disposability verification (Requirement 5 & Finding F-01)
   const dbCheck = await client.query<{ current_database: string }>('SELECT current_database();');
-  const liveDbName = dbCheck.rows[0]?.current_database;
-  if (liveDbName !== 'csi_gcet_test') {
-    throw new Error(
-      `[SAFETY FATAL] Migration lifecycle test refuses to run against "${liveDbName}". Target MUST be strictly "csi_gcet_test". Aborting before executing any SQL.`,
-    );
+  const liveDbName = dbCheck.rows[0]?.current_database || '';
+
+  const safetyCheck = validateMigrationLifecycleSafety(liveDbName, process.env);
+  if (!safetyCheck.valid) {
+    await client.end();
+    throw new Error(safetyCheck.error);
   }
-  console.log(`🔒 [VERIFIED] Live database verified as "${liveDbName}".`);
+  console.log(`🔒 [VERIFIED] Live database verified as "${liveDbName}" and confirmed DISPOSABLE.`);
 
   const migrationsRoot = resolve(process.cwd(), 'apps/api/prisma/migrations');
   const migrationDirs = readdirSync(migrationsRoot)
@@ -85,6 +220,9 @@ async function runMigrationTest() {
     // STEP 1: UP (Apply all migrations in forward order)
     // ------------------------------------------------------------------------
     console.log('\n--- [1/3] Applying all UP Migrations ---');
+    // Create dedicated test sequence to verify sequence USAGE & SELECT privilege lifecycle (Requirement 5)
+    await client.query('CREATE SEQUENCE IF NOT EXISTS public.test_lifecycle_seq;');
+
     for (const dirName of migrationDirs) {
       const upSql = readFileSync(join(migrationsRoot, dirName, 'migration.sql'), 'utf-8');
       console.log(`  Applying UP: ${dirName}`);
@@ -107,6 +245,21 @@ async function runMigrationTest() {
       throw new Error(
         `Expected ${expectedTables.length} tables after UP migration, found ${upTables.rows.length}`,
       );
+    }
+
+    // Verify runtime role permissions after UP 1
+    const up1Perms = await inspectRuntimePermissions(client);
+    console.log(
+      `🔒 [UP 1 Permissions] Schema USAGE: ${up1Perms.hasSchemaUsage}, Table Grants: ${up1Perms.tableGrantsCount}, Sequences (USAGE: ${up1Perms.hasSequenceUsage}, SELECT: ${up1Perms.hasSequenceSelect}), Default ACLs: ${up1Perms.defaultAclCount}`,
+    );
+    if (!up1Perms.hasSchemaUsage) {
+      throw new Error('csi_app must have USAGE on schema public after UP migration');
+    }
+    if (up1Perms.tableGrantsCount === 0) {
+      throw new Error('csi_app must have table DML privileges after UP migration');
+    }
+    if (!up1Perms.hasSequenceUsage || !up1Perms.hasSequenceSelect) {
+      throw new Error('csi_app must have both USAGE and SELECT privileges on sequences after UP migration');
     }
 
     // Verify append-only audit_log trigger (INT-01)
@@ -149,6 +302,28 @@ async function runMigrationTest() {
       throw new Error(`Expected 0 tables after DOWN rollback, found ${downTables.rows.length}`);
     }
 
+    // Verify runtime role permissions after DOWN rollback (Finding 2.1 & Requirement 5)
+    const downPerms = await inspectRuntimePermissions(client);
+    console.log(
+      `🔒 [DOWN Permissions] Schema USAGE: ${downPerms.hasSchemaUsage}, Table Grants: ${downPerms.tableGrantsCount}, Sequences (USAGE: ${downPerms.hasSequenceUsage}, SELECT: ${downPerms.hasSequenceSelect}), Default ACLs: ${downPerms.defaultAclCount}`,
+    );
+    if (downPerms.hasSchemaUsage) {
+      throw new Error(
+        'FAILED: csi_app schema USAGE was not revoked after DOWN migration (Finding 2.1 rollback failure)!',
+      );
+    }
+    if (downPerms.tableGrantsCount !== 0) {
+      throw new Error(`FAILED: csi_app still has ${downPerms.tableGrantsCount} table grants after DOWN rollback!`);
+    }
+    if (downPerms.hasSequenceUsage || downPerms.hasSequenceSelect) {
+      throw new Error(
+        `FAILED: csi_app still has sequence USAGE (${downPerms.hasSequenceUsage}) or SELECT (${downPerms.hasSequenceSelect}) privileges after DOWN rollback!`,
+      );
+    }
+    if (downPerms.defaultAclCount !== 0) {
+      throw new Error(`FAILED: csi_app still has default privileges after DOWN rollback!`);
+    }
+
     // ------------------------------------------------------------------------
     // STEP 3: UP (Re-apply all migrations forward)
     // ------------------------------------------------------------------------
@@ -167,13 +342,33 @@ async function runMigrationTest() {
       );
     }
 
+    // Verify runtime role permissions after UP 2 (restored cleanly)
+    const up2Perms = await inspectRuntimePermissions(client);
+    console.log(
+      `🔒 [UP 2 Permissions] Schema USAGE: ${up2Perms.hasSchemaUsage}, Table Grants: ${up2Perms.tableGrantsCount}, Sequences (USAGE: ${up2Perms.hasSequenceUsage}, SELECT: ${up2Perms.hasSequenceSelect}), Default ACLs: ${up2Perms.defaultAclCount}`,
+    );
+    if (!up2Perms.hasSchemaUsage || up2Perms.tableGrantsCount === 0) {
+      throw new Error('FAILED: csi_app privileges failed to restore after re-applying UP migration!');
+    }
+    if (!up2Perms.hasSequenceUsage || !up2Perms.hasSequenceSelect) {
+      throw new Error('FAILED: csi_app sequence USAGE or SELECT privileges failed to restore after re-applying UP migration!');
+    }
+    console.log('✅ Runtime role (csi_app) least-privilege lifecycle verified: UP -> DOWN (cleanly revoked) -> UP (restored).');
+
     console.log('\n🎉 Migration lifecycle test PASSED! UP -> DOWN -> UP verified.');
   } finally {
+    try {
+      await client.query('DROP SEQUENCE IF EXISTS public.test_lifecycle_seq;');
+    } catch {
+      // ignore cleanup errors
+    }
     await client.end();
   }
 }
 
-runMigrationTest().catch((err) => {
-  console.error('\n❌ Migration lifecycle test FAILED:', err);
-  process.exit(1);
-});
+if (require.main === module) {
+  runMigrationTest().catch((err) => {
+    console.error('\n❌ Migration lifecycle test FAILED:', err);
+    process.exit(1);
+  });
+}

@@ -53,5 +53,9 @@ Thumbs.db
 tmp/
 scratch/
 
-#Documentation
+# Documentation (preserve tracked docs/, ignore scratch reports)
+*.docx
+Phase 1 report.txt
+SKILL (1).md
+gitdiff.md
 docs/
