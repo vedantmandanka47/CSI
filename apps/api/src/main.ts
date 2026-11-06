@@ -2,6 +2,7 @@ import { NestFactory } from '@nestjs/core';
 import { Logger } from 'nestjs-pino';
 import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
+import express from 'express';
 import { AppModule } from './app.module.js';
 import { env } from './config/env.js';
 
@@ -19,6 +20,11 @@ async function bootstrap() {
 
   // Parse cookies for session and CSRF handling (SEC-04)
   app.use(cookieParser());
+
+  // Configure explicit JSON and URL-encoded body limits at the HTTP gateway layer
+  // Mitigates collection explosion / memory exhaustion DoS (GHSA-mrhx-c7xc-m3w5 / B11 / TASK-010)
+  app.use(express.json({ limit: '15mb' }));
+  app.use(express.urlencoded({ extended: true, limit: '15mb' }));
 
   // ARCH-19: Exact trusted proxy hops
   const expressApp = app.getHttpAdapter().getInstance();

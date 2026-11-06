@@ -91,9 +91,13 @@ npm run db:seed
 Bootstrap the initial administrator account interactively:
 
 ```bash
+# Local development bootstrap:
 npm run bootstrap:admin
+
+# Remote / Staging / Production bootstrap (requires explicit confirmation):
+npm run bootstrap:admin -- --production
 ```
-Follow the prompts to enter your administrator email and choose or generate a secure one-time password.
+Follow the prompts to enter your administrator email and choose or generate a secure one-time password. Production bootstrapping enforces a safety gate requiring explicit confirmation phrase entry (`CONFIRM_PRODUCTION_BOOTSTRAP`) and verifies that no prior administrator exists.
 
 ---
 

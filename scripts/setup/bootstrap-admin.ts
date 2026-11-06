@@ -22,43 +22,83 @@ import argon2 from 'argon2';
 const apiEnvPath = resolve(join('apps', 'api', '.env'));
 dotenv.config({ path: apiEnvPath });
 
-const dbUrl = process.env.MIGRATION_DATABASE_URL || process.env.DATABASE_URL;
+export const ALLOWED_LOCAL_HOSTS = ['localhost', '127.0.0.1', '::1'];
+export const ALLOWED_BOOTSTRAP_DATABASES = ['csi_gcet_dev', 'csi_gcet_test'];
 
-if (!dbUrl) {
-  console.error('[FATAL] DATABASE_URL is not defined in environment or apps/api/.env');
-  process.exit(1);
+export function isProductionFlagActive(args: string[], env: NodeJS.ProcessEnv = process.env): boolean {
+  return (
+    args.includes('--production') ||
+    args.includes('--remote') ||
+    env.ALLOW_PRODUCTION_BOOTSTRAP === 'true'
+  );
 }
 
-// 1. Static URL and Host verification (U1 / Finding F-01)
-let parsedUrl: URL;
-try {
-  parsedUrl = new URL(dbUrl);
-} catch (err: unknown) {
-  const message = err instanceof Error ? err.message : String(err);
-  console.error('[FATAL] Failed to parse database URL:', message);
-  process.exit(1);
+export function validateHostSafety(
+  hostname: string,
+  isProduction: boolean,
+): { allowed: boolean; error?: string } {
+  if (ALLOWED_LOCAL_HOSTS.includes(hostname) || isProduction) {
+    return { allowed: true };
+  }
+  return {
+    allowed: false,
+    error: `Refused execution against non-local host "${hostname}". To run against a remote/staging/production database, re-run with --production.`,
+  };
 }
 
-const allowedHosts = ['localhost', '127.0.0.1', '::1'];
-if (!allowedHosts.includes(parsedUrl.hostname)) {
-  console.error('================================================================');
-  console.error(' [REFUSED] REMOTE TARGET DETECTED!');
-  console.error(` Bootstrap utility refused execution against non-local host "${parsedUrl.hostname}".`);
-  console.error('================================================================');
-  process.exit(1);
+export function validateDatabaseNameSafety(
+  dbName: string,
+  isProduction: boolean,
+): { allowed: boolean; error?: string } {
+  if (ALLOWED_BOOTSTRAP_DATABASES.includes(dbName) || isProduction) {
+    return { allowed: true };
+  }
+  return {
+    allowed: false,
+    error: `Administrator bootstrap is strictly restricted to approved local databases: [${ALLOWED_BOOTSTRAP_DATABASES.join(', ')}]. To run against a production/custom database, re-run with --production.`,
+  };
 }
 
-function generateSecureOtp(length = 20): string {
+export function generateSecureOtp(length = 20): string {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%&*';
   const bytes = randomBytes(length);
   let result = '';
   for (let i = 0; i < length; i++) {
-    result += chars[bytes[i] % chars.length];
+    const byteVal = bytes[i];
+    if (byteVal !== undefined) {
+      result += chars[byteVal % chars.length];
+    }
   }
   return result;
 }
 
-async function main() {
+export async function main() {
+  const dbUrl = process.env.MIGRATION_DATABASE_URL || process.env.DATABASE_URL;
+
+  if (!dbUrl) {
+    console.error('[FATAL] DATABASE_URL is not defined in environment or apps/api/.env');
+    process.exit(1);
+  }
+
+  // 1. Static URL and Host verification (U1 / Finding F-01)
+  let parsedUrl: URL;
+  try {
+    parsedUrl = new URL(dbUrl);
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error('[FATAL] Failed to parse database URL:', message);
+    process.exit(1);
+  }
+
+  const isProduction = isProductionFlagActive(process.argv, process.env);
+  const hostCheck = validateHostSafety(parsedUrl.hostname, isProduction);
+  if (!hostCheck.allowed) {
+    console.error('================================================================');
+    console.error(' [REFUSED] REMOTE TARGET DETECTED!');
+    console.error(` ${hostCheck.error}`);
+    console.error('================================================================');
+    process.exit(1);
+  }
   console.log('================================================================');
   console.log(' CSI GCET SB — Administrator Bootstrap (Section 4.5)');
   console.log(' Hard Rule: No demo credentials. Passwords are never saved to disk.');
@@ -70,16 +110,14 @@ async function main() {
   try {
     // 0. Live database target allowlist verification (U1 / Finding F-01)
     const dbResult = await client.query<{ current_database: string }>('SELECT current_database();');
-    const liveDbName = dbResult.rows[0]?.current_database;
-    const ALLOWED_BOOTSTRAP_DATABASES = ['csi_gcet_dev', 'csi_gcet_test'];
+    const liveDbName = dbResult.rows[0]?.current_database ?? '';
 
-    if (!ALLOWED_BOOTSTRAP_DATABASES.includes(liveDbName)) {
+    const dbCheck = validateDatabaseNameSafety(liveDbName, isProduction);
+    if (!dbCheck.allowed) {
       console.error('================================================================');
       console.error(' [REFUSED] DATABASE ALLOWLIST VIOLATION DETECTED!');
       console.error(` Connected server reports current_database() = "${liveDbName}".`);
-      console.error(
-        ` Administrator bootstrap is strictly restricted to approved databases: [${ALLOWED_BOOTSTRAP_DATABASES.join(', ')}].`,
-      );
+      console.error(` ${dbCheck.error}`);
       console.error('================================================================');
       try {
         await client.end();
@@ -88,6 +126,39 @@ async function main() {
       }
       process.exit(1);
     }
+
+    if (isProduction) {
+      console.warn('================================================================');
+      console.warn(' [WARNING] PRODUCTION BOOTSTRAP MODE ENABLED');
+      console.warn(` Target Database: "${liveDbName}" on host "${parsedUrl.hostname}"`);
+      console.warn(' This operation will initialize the primary system administrator.');
+      console.warn('================================================================\n');
+
+      let confirmed = false;
+      const confirmArg = process.argv.find((a) => a.startsWith('--confirm='));
+      if (confirmArg && confirmArg.split('=')[1] === 'CONFIRM_PRODUCTION_BOOTSTRAP') {
+        confirmed = true;
+      } else {
+        const rlConfirm = createInterface({ input, output });
+        const answer = await rlConfirm.question(
+          ' Type "CONFIRM_PRODUCTION_BOOTSTRAP" to proceed: ',
+        );
+        rlConfirm.close();
+        confirmed = answer.trim() === 'CONFIRM_PRODUCTION_BOOTSTRAP';
+      }
+
+      if (!confirmed) {
+        console.error('\n[ABORTED] Confirmation phrase did not match. Aborting bootstrap.\n');
+        try {
+          await client.end();
+        } catch {
+          // ignore cleanup error
+        }
+        process.exit(1);
+      }
+      console.log('[CONFIRMED] Production bootstrap authorization confirmed.\n');
+    }
+
     console.log(`[VERIFIED] Operating against authorized database: "${liveDbName}".\n`);
 
     // 1. Check if the 'users' table exists
@@ -124,7 +195,16 @@ async function main() {
       process.exit(1);
     }
 
-    const adminRoleId = adminRoleRes.rows[0].id;
+    const adminRoleId = adminRoleRes.rows[0]?.id;
+    if (!adminRoleId) {
+      console.error('[FATAL] Admin role ID missing. Please check database seeding.');
+      try {
+        await client.end();
+      } catch {
+        // ignore cleanup error
+      }
+      process.exit(1);
+    }
 
     // 3. Check if an admin already exists in role_assignments
     const existingAdminRes = await client.query<{ count: string }>(
@@ -136,7 +216,7 @@ async function main() {
       [adminRoleId],
     );
 
-    const adminCount = parseInt(existingAdminRes.rows[0].count, 10);
+    const adminCount = parseInt(existingAdminRes.rows[0]?.count ?? '0', 10);
     if (adminCount > 0) {
       console.error('================================================================');
       console.error(' [REFUSED] An administrator account already exists.');
@@ -158,14 +238,14 @@ async function main() {
     let isAutoOtp = false;
 
     for (let i = 0; i < args.length; i++) {
-      if (args[i] === '--email' && args[i + 1]) {
-        email = args[i + 1];
+      if (args[i] === '--email' && args[i + 1] !== undefined) {
+        email = args[i + 1] ?? '';
         i++;
-      } else if (args[i] === '--name' && args[i + 1]) {
-        name = args[i + 1];
+      } else if (args[i] === '--name' && args[i + 1] !== undefined) {
+        name = args[i + 1] ?? '';
         i++;
-      } else if (args[i] === '--password' && args[i + 1]) {
-        password = args[i + 1];
+      } else if (args[i] === '--password' && args[i + 1] !== undefined) {
+        password = args[i + 1] ?? '';
         i++;
       } else if (args[i] === '--generate-otp') {
         isAutoOtp = true;
@@ -245,7 +325,10 @@ async function main() {
         [name, email.toLowerCase(), passwordHash],
       );
 
-      const userId = userInsertRes.rows[0].id;
+      const userId = userInsertRes.rows[0]?.id;
+      if (!userId) {
+        throw new Error('Failed to retrieve newly created user ID.');
+      }
 
       // Assign admin role
       await client.query(
@@ -279,7 +362,12 @@ async function main() {
   }
 }
 
-main().catch((err) => {
-  console.error('[FATAL] Bootstrap admin execution failed:', err);
-  process.exit(1);
-});
+if (
+  process.argv[1] &&
+  (process.argv[1].endsWith('bootstrap-admin.ts') || process.argv[1].endsWith('bootstrap-admin.js'))
+) {
+  main().catch((err) => {
+    console.error('[FATAL] Bootstrap admin execution failed:', err);
+    process.exit(1);
+  });
+}

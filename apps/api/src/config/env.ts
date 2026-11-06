@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import * as dotenv from 'dotenv';
 import { createPrivateKey, createPublicKey } from 'crypto';
+import { normalizeEd25519Key } from '../common/crypto/keys.util.js';
 
 // Load .env file into process.env before validation
 dotenv.config();
@@ -111,7 +112,8 @@ export const EnvSchema = z
         data.QR_SIGNING_PUBLIC_KEY !== 'dev_qr_public_key'
       ) {
         try {
-          const privKey = createPrivateKey(data.QR_SIGNING_PRIVATE_KEY);
+          const rawPriv = normalizeEd25519Key(data.QR_SIGNING_PRIVATE_KEY) || data.QR_SIGNING_PRIVATE_KEY;
+          const privKey = createPrivateKey(rawPriv);
           if (privKey.asymmetricKeyType !== 'ed25519') {
             ctx.addIssue({
               code: z.ZodIssueCode.custom,
@@ -123,7 +125,8 @@ export const EnvSchema = z
             const derivedPubDer = derivedPub.export({ type: 'spki', format: 'der' });
 
             try {
-              const pubKey = createPublicKey(data.QR_SIGNING_PUBLIC_KEY);
+              const rawPub = normalizeEd25519Key(data.QR_SIGNING_PUBLIC_KEY) || data.QR_SIGNING_PUBLIC_KEY;
+              const pubKey = createPublicKey(rawPub);
               if (pubKey.asymmetricKeyType !== 'ed25519') {
                 ctx.addIssue({
                   code: z.ZodIssueCode.custom,
@@ -208,7 +211,7 @@ function loadAndValidateEnv(): Env {
   const parseResult = EnvSchema.safeParse(rawEnv);
   if (!parseResult.success) {
     console.error('❌ Invalid or missing environment variables:');
-    for (const error of parseResult.error.errors) {
+    for (const error of parseResult.error.issues) {
       console.error(`   - ${error.path.join('.')}: ${error.message}`);
     }
     throw new Error('Application environment validation failed');

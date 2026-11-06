@@ -1,4 +1,5 @@
 import { EnvSchema } from '../../../../apps/api/src/config/env.js';
+import { normalizeEd25519Key } from '../../../../apps/api/src/common/crypto/keys.util.js';
 import { generateKeyPairSync } from 'crypto';
 
 describe('Environment Schema Validation (ARCH-16, DEP-14, AUD-SEC-01)', () => {
@@ -44,6 +45,36 @@ describe('Environment Schema Validation (ARCH-16, DEP-14, AUD-SEC-01)', () => {
   it('validates a complete, hardened production environment configuration', () => {
     const result = EnvSchema.safeParse(validProdEnv);
     expect(result.success).toBe(true);
+  });
+
+  it('validates base64-encoded Ed25519 keys emitted by gen-secrets.mjs in production (TASK-009 / B10)', () => {
+    const b64Priv = Buffer.from(validEd25519Priv).toString('base64');
+    const b64Pub = Buffer.from(validEd25519Pub).toString('base64');
+    const result = EnvSchema.safeParse({
+      ...validProdEnv,
+      QR_SIGNING_PRIVATE_KEY: b64Priv,
+      QR_SIGNING_PUBLIC_KEY: b64Pub,
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('validates Ed25519 keys with literal escaped newlines and outer quotes', () => {
+    const escapedPriv = `"${validEd25519Priv.replace(/\n/g, '\\n')}"`;
+    const escapedPub = `'${validEd25519Pub.replace(/\n/g, '\\n')}'`;
+    const result = EnvSchema.safeParse({
+      ...validProdEnv,
+      QR_SIGNING_PRIVATE_KEY: escapedPriv,
+      QR_SIGNING_PUBLIC_KEY: escapedPub,
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('normalizes various key representations via normalizeEd25519Key', () => {
+    expect(normalizeEd25519Key(undefined)).toBeNull();
+    expect(normalizeEd25519Key('')).toBeNull();
+    const b64 = Buffer.from(validEd25519Priv).toString('base64');
+    expect(normalizeEd25519Key(b64)).toBe(validEd25519Priv.trim());
+    expect(normalizeEd25519Key(`"${validEd25519Priv.trim()}"`)).toBe(validEd25519Priv.trim());
   });
 
   it('rejects short session or CSRF secrets (< 32 characters)', () => {

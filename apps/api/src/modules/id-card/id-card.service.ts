@@ -23,6 +23,7 @@ import {
   UserStatus,
 } from '@csi/shared';
 import { env } from '../../config/env.js';
+import { normalizeEd25519Key } from '../../common/crypto/keys.util.js';
 
 export interface QrPassPayload {
   sub: string;
@@ -76,17 +77,8 @@ export class IdCardService {
     if (!raw || raw === 'dev_qr_private_key' || raw === 'dev_qr_public_key') {
       return null;
     }
-    let str = raw.trim();
-    if (!str.startsWith('-----BEGIN')) {
-      try {
-        const decoded = Buffer.from(str, 'base64').toString('utf8');
-        if (decoded.includes('-----BEGIN')) {
-          str = decoded;
-        }
-      } catch {
-        // Ignore base64 decode failure and try raw string
-      }
-    }
+    const str = normalizeEd25519Key(raw);
+    if (!str) return null;
     try {
       return isPrivate ? createPrivateKey(str) : createPublicKey(str);
     } catch (e) {
