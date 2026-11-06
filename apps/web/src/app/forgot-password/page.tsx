@@ -9,7 +9,6 @@ export default function ForgotPasswordPage() {
   const [email, setEmail] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
-  const [resetToken, setResetToken] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -18,14 +17,11 @@ export default function ForgotPasswordPage() {
     setErrorMsg(null);
 
     try {
-      const res = await apiClient.post<{ message: string; resetToken?: string }>(
+      await apiClient.post<{ message: string }>(
         '/auth/forgot-password',
         { email },
       );
       setSubmitted(true);
-      if (res.resetToken) {
-        setResetToken(res.resetToken);
-      }
     } catch (err: unknown) {
       if (err instanceof ApiError) {
         setErrorMsg(err.message);
@@ -82,25 +78,6 @@ export default function ForgotPasswordPage() {
                 If an account exists with this email address, cryptographic password reset instructions have been dispatched.
               </p>
             </div>
-
-            {resetToken && (
-              <div className="rounded-lg border border-border bg-surface-raised p-4 text-left space-y-2">
-                <span className="text-xs font-semibold uppercase tracking-wider text-text-muted block">
-                  Password Reset Token (Development Mode)
-                </span>
-                <p className="font-mono text-xs break-all text-primary bg-surface p-2 rounded border border-border/60">
-                  {resetToken}
-                </p>
-                <div className="pt-2 text-center">
-                  <Link
-                    href={`/reset-password?token=${resetToken}`}
-                    className="inline-block text-xs font-semibold text-primary underline hover:opacity-80"
-                  >
-                    Proceed to Reset Password Now
-                  </Link>
-                </div>
-              </div>
-            )}
 
             <div className="pt-2">
               <Link

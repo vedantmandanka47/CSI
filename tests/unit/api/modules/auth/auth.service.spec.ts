@@ -33,6 +33,7 @@ describe('AuthService (Phase 1 M3)', () => {
       create: jest.Mock;
       findUnique: jest.Mock;
       update: jest.Mock;
+      deleteMany: jest.Mock;
     };
     session: {
       create: jest.Mock;
@@ -68,6 +69,7 @@ describe('AuthService (Phase 1 M3)', () => {
         create: jest.fn(),
         findUnique: jest.fn(),
         update: jest.fn(),
+        deleteMany: jest.fn(),
       },
       session: {
         create: jest.fn(),
@@ -249,6 +251,86 @@ describe('AuthService (Phase 1 M3)', () => {
           data: expect.objectContaining({ action: 'AUTH_LOGIN_SUCCESS' }),
         }),
       );
+    });
+  });
+
+  describe('forgotPassword', () => {
+    it('returns uniform generic response and NEVER leaks resetToken for active user (B01 / F01)', async () => {
+      mockPrisma.user.findUnique.mockResolvedValue({
+        id: 'u-active-1',
+        email: 'active@gcet.ac.in',
+        status: UserStatus.ACTIVE,
+      });
+
+      const res = await service.forgotPassword('active@gcet.ac.in', '127.0.0.1');
+
+      // Uniform response message
+      expect(res.message).toBe(
+        'If an account exists with this email, a password reset link has been sent.',
+      );
+      // Critical assertion: resetToken MUST NOT be returned
+      expect((res as Record<string, unknown>).resetToken).toBeUndefined();
+      expect(Object.keys(res)).toEqual(['message']);
+
+      // Invalidate previous tokens
+      expect(mockPrisma.passwordResetToken.deleteMany).toHaveBeenCalledWith({
+        where: { userId: 'u-active-1' },
+      });
+
+      // Stores hashed token, NOT raw token in DB
+      expect(mockPrisma.passwordResetToken.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            userId: 'u-active-1',
+            tokenHash: expect.any(String),
+            expiresAt: expect.any(Date),
+          }),
+        }),
+      );
+
+      // Audit log
+      expect(mockPrisma.auditLog.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            action: 'AUTH_PASSWORD_RESET_REQUESTED',
+            actorId: 'u-active-1',
+            targetId: 'u-active-1',
+            ip: '127.0.0.1',
+          }),
+        }),
+      );
+    });
+
+    it('returns identical uniform message for non-existent user and does not leak token or audit', async () => {
+      mockPrisma.user.findUnique.mockResolvedValue(null);
+
+      const res = await service.forgotPassword('nonexistent@gcet.ac.in', '127.0.0.1');
+
+      expect(res.message).toBe(
+        'If an account exists with this email, a password reset link has been sent.',
+      );
+      expect((res as Record<string, unknown>).resetToken).toBeUndefined();
+      expect(Object.keys(res)).toEqual(['message']);
+      expect(mockPrisma.passwordResetToken.create).not.toHaveBeenCalled();
+      expect(mockPrisma.auditLog.create).not.toHaveBeenCalled();
+    });
+
+    it('returns identical uniform message for inactive/pending user without generating token', async () => {
+      mockPrisma.user.findUnique.mockResolvedValue({
+        id: 'u-pending-1',
+        email: 'pending@gcet.ac.in',
+        status: UserStatus.PENDING,
+      });
+
+      const res = await service.forgotPassword('pending@gcet.ac.in', '127.0.0.1');
+
+      expect(res.message).toBe(
+        'If an account exists with this email, a password reset link has been sent.',
+      );
+      expect((res as Record<string, unknown>).resetToken).toBeUndefined();
+      expect(Object.keys(res)).toEqual(['message']);
+      expect(mockPrisma.passwordResetToken.create).not.toHaveBeenCalled();
+      expect(mockPrisma.auditLog.create).not.toHaveBeenCalled();
     });
   });
 

@@ -308,11 +308,14 @@ export class AuthService {
 
   /**
    * Forgot Password — Token Request
+   * Generates a single-use password reset token, persists its hash, and logs the request.
+   * NEVER returns the raw token in the response (B01 / F01 / CR-002 remediation).
+   * Response is strictly uniform to prevent email enumeration.
    */
   async forgotPassword(
     email: string,
     ip?: string,
-  ): Promise<{ message: string; resetToken?: string }> {
+  ): Promise<{ message: string }> {
     const user = await this.prisma.user.findUnique({
       where: { email },
     });
@@ -325,6 +328,11 @@ export class AuthService {
     if (!user || user.status !== UserStatus.ACTIVE) {
       return genericResponse;
     }
+
+    // Invalidate any existing unused reset tokens for this user before generating a new one
+    await this.prisma.passwordResetToken.deleteMany({
+      where: { userId: user.id },
+    });
 
     const resetToken = generateSecureToken();
     const tokenHash = hashToken(resetToken);
@@ -348,10 +356,7 @@ export class AuthService {
       },
     });
 
-    return {
-      ...genericResponse,
-      resetToken, // Returned in dev/test for verification
-    };
+    return genericResponse;
   }
 
   /**

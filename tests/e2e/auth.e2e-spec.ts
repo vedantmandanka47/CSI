@@ -5,6 +5,7 @@ import cookieParser from 'cookie-parser';
 import { AppModule } from '../../apps/api/src/app.module.js';
 import { PrismaService } from '../../apps/api/src/infra/prisma/prisma.service.js';
 import { assertStrictTestDatabase } from '../../apps/api/src/common/guards/test-db-guard.js';
+import { hashToken } from '../../apps/api/src/common/crypto/tokens.js';
 
 describe('Auth & Session Subsystem (E2E) (ARCH-05, ARCH-14, SEC-04, SEC-05, SEC-23)', () => {
   let app: INestApplication;
@@ -208,15 +209,29 @@ describe('Auth & Session Subsystem (E2E) (ARCH-05, ARCH-14, SEC-04, SEC-05, SEC-
       .send({ email: testEmail })
       .expect(200);
 
-    expect(forgotRes.body.resetToken).toBeDefined();
-    const resetToken = forgotRes.body.resetToken;
+    // Negative security assertion (B01 / F01 / CR-002): resetToken must NEVER leak in API response
+    expect(forgotRes.body.resetToken).toBeUndefined();
+    expect(forgotRes.body.message).toContain('password reset link has been sent');
+
+    // Create a known test reset token directly in database to test reset-password consumption
+    const user = await prisma.user.findUnique({ where: { email: testEmail } });
+    expect(user).toBeDefined();
+
+    const knownResetToken = 'e2e-test-reset-token-' + Date.now();
+    await prisma.passwordResetToken.create({
+      data: {
+        userId: user!.id,
+        tokenHash: hashToken(knownResetToken),
+        expiresAt: new Date(Date.now() + 60 * 60 * 1000),
+      },
+    });
 
     // Reset password
     const newPassword = 'BrandNewPassword123!';
     await request(app.getHttpServer())
       .post('/api/auth/reset-password')
       .send({
-        token: resetToken,
+        token: knownResetToken,
         new_password: newPassword,
       })
       .expect(200);
