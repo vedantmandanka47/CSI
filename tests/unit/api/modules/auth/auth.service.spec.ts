@@ -3,15 +3,23 @@ import {
   ConflictException,
   UnauthorizedException,
   BadRequestException,
+  ForbiddenException,
 } from '@nestjs/common';
 import { AuthService } from '../../../../../apps/api/src/modules/auth/auth.service.js';
 import { PrismaService } from '../../../../../apps/api/src/infra/prisma/prisma.service.js';
 import { EmailService } from '../../../../../apps/api/src/infra/email/email.service.js';
-import { RoleCode, UserStatus } from '@csi/shared';
+import { DriveWindowsService } from '../../../../../apps/api/src/modules/admin/drives/drive-windows.service.js';
+import { RoleCode, UserStatus, ErrorCode } from '@csi/shared';
 import { hashPassword, generateSecureToken, hashToken } from '../../../../../apps/api/src/common/crypto/tokens.js';
 
 describe('AuthService (Phase 1 M3)', () => {
   let service: AuthService;
+  let mockDriveWindowsService: {
+    isDriveOpen: jest.Mock;
+    getDriveStatus: jest.Mock;
+    listAllWindows: jest.Mock;
+    createOrUpdateWindow: jest.Mock;
+  };
   let mockEmailService: {
     sendVerificationEmail: jest.Mock;
     sendPasswordResetEmail: jest.Mock;
@@ -106,6 +114,13 @@ describe('AuthService (Phase 1 M3)', () => {
       clearSentEmails: jest.fn(),
     };
 
+    mockDriveWindowsService = {
+      isDriveOpen: jest.fn().mockResolvedValue(true),
+      getDriveStatus: jest.fn(),
+      listAllWindows: jest.fn(),
+      createOrUpdateWindow: jest.fn(),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         AuthService,
@@ -117,6 +132,10 @@ describe('AuthService (Phase 1 M3)', () => {
           provide: EmailService,
           useValue: mockEmailService,
         },
+        {
+          provide: DriveWindowsService,
+          useValue: mockDriveWindowsService,
+        },
       ],
     }).compile();
 
@@ -124,6 +143,55 @@ describe('AuthService (Phase 1 M3)', () => {
   });
 
   describe('signup', () => {
+    it('throws ForbiddenException if membership recruitment drive is closed (TASK-018 / F04)', async () => {
+      mockDriveWindowsService.isDriveOpen.mockResolvedValue(false);
+
+      const err = await service
+        .signup({
+          email: 'student@gcet.ac.in',
+          password: 'Password123!',
+          full_name: 'Student User',
+        })
+        .catch((e: unknown) => e);
+
+      expect(err).toBeInstanceOf(ForbiddenException);
+      expect((err as ForbiddenException).getResponse()).toEqual(
+        expect.objectContaining({ code: ErrorCode.DRIVE_CLOSED }),
+      );
+      expect(mockDriveWindowsService.isDriveOpen).toHaveBeenCalledWith('membership');
+    });
+
+    it('throws BadRequestException if email is not an institutional domain (TASK-018 / F04)', async () => {
+      const err = await service
+        .signup({
+          email: 'external@gmail.com',
+          password: 'Password123!',
+          full_name: 'External Person',
+        })
+        .catch((e: unknown) => e);
+
+      expect(err).toBeInstanceOf(BadRequestException);
+      expect((err as BadRequestException).getResponse()).toEqual(
+        expect.objectContaining({ code: ErrorCode.INVALID_INSTITUTIONAL_EMAIL }),
+      );
+    });
+
+    it('throws BadRequestException if enrollment number format is invalid (TASK-018 / F04)', async () => {
+      const err = await service
+        .signup({
+          email: 'student@gcet.ac.in',
+          password: 'Password123!',
+          full_name: 'Student Person',
+          enrollment_no: 'bad!',
+        })
+        .catch((e: unknown) => e);
+
+      expect(err).toBeInstanceOf(BadRequestException);
+      expect((err as BadRequestException).getResponse()).toEqual(
+        expect.objectContaining({ code: ErrorCode.INVALID_ENROLLMENT_FORMAT }),
+      );
+    });
+
     it('throws ConflictException if email is already taken', async () => {
       mockPrisma.user.findUnique.mockResolvedValue({ id: 'u1', email: 'existing@gcet.ac.in' });
 

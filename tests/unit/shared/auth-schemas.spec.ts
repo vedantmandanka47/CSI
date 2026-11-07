@@ -22,6 +22,90 @@ describe('Auth Schemas', () => {
     expect(parsed.enrollment_no).toBe('210010116001');
   });
 
+  it('accepts both @gcet.ac.in and @gcet.edu.in institutional email domains on signup (TASK-018 / F04)', () => {
+    const acIn = SignupPayloadSchema.parse({
+      email: 'student@gcet.ac.in',
+      password: 'StrongPassword123!',
+      full_name: 'GCET Student',
+    });
+    expect(acIn.email).toBe('student@gcet.ac.in');
+
+    const eduIn = SignupPayloadSchema.parse({
+      email: 'student@gcet.edu.in',
+      password: 'StrongPassword123!',
+      full_name: 'GCET Student',
+    });
+    expect(eduIn.email).toBe('student@gcet.edu.in');
+  });
+
+  it('rejects non-institutional email domains on signup (TASK-018 / F04)', () => {
+    const nonInstitutional = [
+      'student@gmail.com',
+      'student@yahoo.co.in',
+      'student@outlook.com',
+      'student@fake-gcet.edu.in',
+      'student@gcet.edu.in.attacker.com',
+    ];
+
+    for (const email of nonInstitutional) {
+      expect(() =>
+        SignupPayloadSchema.parse({
+          email,
+          password: 'StrongPassword123!',
+          full_name: 'External Person',
+        }),
+      ).toThrow();
+    }
+  });
+
+  it('validates enrollment number formats and normalizes empty string to null (TASK-018 / F04)', () => {
+    // 12-digit numeric
+    const numeric = SignupPayloadSchema.parse({
+      email: 'student@gcet.ac.in',
+      password: 'StrongPassword123!',
+      full_name: 'Numeric Student',
+      enrollment_no: '210010116099',
+    });
+    expect(numeric.enrollment_no).toBe('210010116099');
+
+    // Alphanumeric
+    const alphaNum = SignupPayloadSchema.parse({
+      email: 'student@gcet.ac.in',
+      password: 'StrongPassword123!',
+      full_name: 'AlphaNum Student',
+      enrollment_no: '23CS101',
+    });
+    expect(alphaNum.enrollment_no).toBe('23CS101');
+
+    // Empty string normalized to null
+    const emptyString = SignupPayloadSchema.parse({
+      email: 'student@gcet.ac.in',
+      password: 'StrongPassword123!',
+      full_name: 'Empty No Student',
+      enrollment_no: '',
+    });
+    expect(emptyString.enrollment_no).toBeNull();
+
+    // Reject too short or special characters
+    expect(() =>
+      SignupPayloadSchema.parse({
+        email: 'student@gcet.ac.in',
+        password: 'StrongPassword123!',
+        full_name: 'Short No Student',
+        enrollment_no: '123',
+      }),
+    ).toThrow();
+
+    expect(() =>
+      SignupPayloadSchema.parse({
+        email: 'student@gcet.ac.in',
+        password: 'StrongPassword123!',
+        full_name: 'Invalid No Student',
+        enrollment_no: '21CS!@#01',
+      }),
+    ).toThrow();
+  });
+
   it('rejects weak passwords for signup', () => {
     const weakPasswords = [
       'short1!',

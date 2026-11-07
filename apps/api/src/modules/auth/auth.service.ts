@@ -3,16 +3,19 @@ import {
   ConflictException,
   UnauthorizedException,
   BadRequestException,
+  ForbiddenException,
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../../infra/prisma/prisma.service.js';
 import { EmailService } from '../../infra/email/email.service.js';
+import { DriveWindowsService } from '../admin/drives/drive-windows.service.js';
 import {
   SignupPayload,
   LoginPayload,
   CurrentUser,
   RoleCode,
   UserStatus,
+  ErrorCode,
   computeEffectivePermissions,
 } from '@csi/shared';
 import {
@@ -27,6 +30,7 @@ export class AuthService {
   constructor(
     private prisma: PrismaService,
     private emailService: EmailService,
+    private driveWindowsService: DriveWindowsService,
   ) {}
 
   /**
@@ -36,6 +40,35 @@ export class AuthService {
     payload: SignupPayload,
     ip?: string,
   ): Promise<{ message: string; verificationRequired: boolean; userId: string }> {
+    // 1. Enforce active recruitment drive window (TASK-018 / F04)
+    const isDriveOpen = await this.driveWindowsService.isDriveOpen('membership');
+    if (!isDriveOpen) {
+      throw new ForbiddenException({
+        code: ErrorCode.DRIVE_CLOSED,
+        message: 'Annual student branch membership recruitment drive is currently closed.',
+      });
+    }
+
+    // 2. Enforce institutional email domain (TASK-018 / F04)
+    const institutionalDomainPattern = /^[a-zA-Z0-9._%+-]+@(gcet\.edu\.in|gcet\.ac\.in)$/i;
+    if (!institutionalDomainPattern.test(payload.email)) {
+      throw new BadRequestException({
+        code: ErrorCode.INVALID_INSTITUTIONAL_EMAIL,
+        message: 'Registration requires a valid GCET institutional email address (@gcet.edu.in or @gcet.ac.in).',
+      });
+    }
+
+    // 3. Enforce enrollment number format if provided (TASK-018 / F04)
+    if (payload.enrollment_no) {
+      const enrollmentPattern = /^[0-9A-Za-z]{6,20}$/;
+      if (!enrollmentPattern.test(payload.enrollment_no)) {
+        throw new BadRequestException({
+          code: ErrorCode.INVALID_ENROLLMENT_FORMAT,
+          message: 'Enrollment number must be between 6 and 20 alphanumeric characters.',
+        });
+      }
+    }
+
     const existing = await this.prisma.user.findUnique({
       where: { email: payload.email },
     });

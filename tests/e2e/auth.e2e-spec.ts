@@ -7,6 +7,7 @@ import { PrismaService } from '../../apps/api/src/infra/prisma/prisma.service.js
 import { EmailService } from '../../apps/api/src/infra/email/email.service.js';
 import { assertStrictTestDatabase } from '../../apps/api/src/common/guards/test-db-guard.js';
 import { hashToken } from '../../apps/api/src/common/crypto/tokens.js';
+import { ErrorCode } from '@csi/shared';
 
 describe('Auth & Session Subsystem (E2E) (ARCH-05, ARCH-14, SEC-04, SEC-05, SEC-23)', () => {
   let app: INestApplication;
@@ -52,6 +53,7 @@ describe('Auth & Session Subsystem (E2E) (ARCH-05, ARCH-14, SEC-04, SEC-05, SEC-
     await prisma.passwordResetToken.deleteMany();
     await prisma.roleAssignment.deleteMany();
     await prisma.user.deleteMany();
+    await prisma.driveWindow.deleteMany();
 
     // Ensure default system roles exist
     await prisma.role.upsert({
@@ -61,6 +63,16 @@ describe('Auth & Session Subsystem (E2E) (ARCH-05, ARCH-14, SEC-04, SEC-05, SEC-
         code: 'member',
         name: 'Member',
         description: 'Standard CSI student member',
+      },
+    });
+
+    // Ensure open membership drive window exists (TASK-018 / F04)
+    await prisma.driveWindow.create({
+      data: {
+        type: 'membership',
+        isOpen: true,
+        opensAt: new Date(Date.now() - 24 * 60 * 60 * 1000),
+        closesAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
       },
     });
   });
@@ -115,6 +127,64 @@ describe('Auth & Session Subsystem (E2E) (ARCH-05, ARCH-14, SEC-04, SEC-05, SEC-
     const user = await prisma.user.findUnique({ where: { email: testEmail } });
     expect(user).toBeDefined();
     expect(user?.status).toBe('pending');
+  });
+
+  it('2a. POST /api/auth/signup rejects non-institutional emails with 400 (TASK-018 / F04)', async () => {
+    const res = await request(app.getHttpServer())
+      .post('/api/auth/signup')
+      .send({
+        email: 'intruder@gmail.com',
+        password: testPassword,
+        full_name: 'External Person',
+      })
+      .expect(400);
+
+    expect(res.body.error).toBeDefined();
+    expect(res.body.error.code).toBe('VALIDATION_ERROR');
+  });
+
+  it('2b. POST /api/auth/signup rejects invalid enrollment number formats with 400 (TASK-018 / F04)', async () => {
+    const res = await request(app.getHttpServer())
+      .post('/api/auth/signup')
+      .send({
+        email: 'other.student@gcet.ac.in',
+        password: testPassword,
+        full_name: 'Invalid Enrollment Student',
+        enrollment_no: '123',
+      })
+      .expect(400);
+
+    expect(res.body.error).toBeDefined();
+    expect(res.body.error.code).toBe('VALIDATION_ERROR');
+  });
+
+  it('2c. POST /api/auth/signup rejects registration with 403 DRIVE_CLOSED when recruitment drive is closed (TASK-018 / F04)', async () => {
+    // Temporarily close membership recruitment drive
+    await prisma.driveWindow.update({
+      where: { type: 'membership' },
+      data: { isOpen: false },
+    });
+
+    try {
+      const res = await request(app.getHttpServer())
+        .post('/api/auth/signup')
+        .send({
+          email: 'closed.drive.student@gcet.ac.in',
+          password: testPassword,
+          full_name: 'Late Student',
+          enrollment_no: '210010116088',
+        })
+        .expect(403);
+
+      expect(res.body.error).toBeDefined();
+      expect(res.body.error.code).toBe(ErrorCode.DRIVE_CLOSED);
+    } finally {
+      // Restore open recruitment drive window
+      await prisma.driveWindow.update({
+        where: { type: 'membership' },
+        data: { isOpen: true },
+      });
+    }
   });
 
   it('3. POST /api/auth/login fails when user is still pending email verification', async () => {

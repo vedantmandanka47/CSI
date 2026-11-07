@@ -25,7 +25,7 @@ This document is the unified, authoritative remediation master plan for the CSI 
 | :--- | :--- | :---: | :---: | :---: | :---: |
 | **Phase 0** | Critical Account & Authentication Blockers | 6 | 6 | 0 | 0 |
 | **Phase 1** | Build Pipeline, Toolchain & Runtime Initialization | 5 | 5 | 0 | 0 |
-| **Phase 2** | Core Domain Logic, Event Capacities & Role Boundaries | 8 | 6 | 0 | 2 |
+| **Phase 2** | Core Domain Logic, Event Capacities & Role Boundaries | 8 | 7 | 0 | 1 |
 | **Phase 3** | Attendance, Offline Sync & Scanner System | 7 | 0 | 0 | 7 |
 | **Phase 4** | Document Engine, Batch Processing & File Storage Durability | 9 | 0 | 0 | 9 |
 | **Phase 5** | Annual Rollover, Checklists, Workspaces & Transactions | 5 | 0 | 0 | 5 |
@@ -34,7 +34,7 @@ This document is the unified, authoritative remediation master plan for the CSI 
 | **Phase 8** | Database, Disaster Recovery, Backup & Archive Safety | 7 | 4 | 1 | 2 |
 | **Phase 9** | API Validation, Error Handling, Client Resilience & E2E | 4 | 0 | 0 | 4 |
 | **Phase 10** | Production Operations, Deployment Recipes & Documentation | 5 | 0 | 0 | 5 |
-| **TOTAL** | **Comprehensive Full-Platform Remediation** | **66** | **22** | **0** | **44** |
+| **TOTAL** | **Comprehensive Full-Platform Remediation** | **66** | **23** | **0** | **43** |
 
 ---
 
@@ -375,17 +375,34 @@ This document is the unified, authoritative remediation master plan for the CSI 
     2. Align query ordering and comments with the documented policy.
     3. Add tests verifying deterministic waitlist promotion order.
 
-- [ ] **TASK-018 [HIGH] [F04]: Enforce Recruitment Windows & Institutional Domain Rules on Signup**
+- [x] **TASK-018 [HIGH] [F04]: Enforce Recruitment Windows & Institutional Domain Rules on Signup**
   - **Severity:** High (Admission Policy Bypass)
+  - **Completed:**
+    - Injected `DriveWindowsService` into `AuthService` and imported `AdminModule` into `AuthModule`.
+    - Enforced recruitment drive window validation in `AuthService.signup()`, rejecting registrations with `ForbiddenException` (`ErrorCode.DRIVE_CLOSED`) when the membership recruitment drive is inactive or closed.
+    - Added `InstitutionalEmailSchema` and application validation enforcing official GCET institutional email addresses (`@gcet.edu.in` and `@gcet.ac.in`) with `ErrorCode.INVALID_INSTITUTIONAL_EMAIL`.
+    - Added `EnrollmentNoSchema` and application validation enforcing 6-20 alphanumeric characters (`/^[0-9A-Za-z]{6,20}$/`) with `ErrorCode.INVALID_ENROLLMENT_FORMAT`.
+    - Eliminated hardcoded `is_on_roster: true` assertion in `MemberAdminService.approveApplication` with dynamic database lookup against `tx.rosterEntry.findFirst`.
+    - Seeded default open membership drive window in `apps/api/prisma/seed.ts`.
+    - Added unit test coverage in `tests/unit/shared/auth-schemas.spec.ts` (9/9 tests passing), `tests/unit/api/modules/auth/auth.service.spec.ts` (14/14 tests passing), and `tests/unit/api/modules/admin/member-admin.service.spec.ts` (11/11 tests passing).
+    - Added live PostgreSQL E2E tests in `tests/e2e/auth.e2e-spec.ts` validating rejection of non-institutional emails, invalid enrollment formats, and 403 `DRIVE_CLOSED` on closed drive windows (18/18 tests passing).
   - **Affected Files:**
     - `apps/api/src/modules/auth/auth.service.ts` (`signup`)
-    - `apps/api/src/modules/admin/drives/drive-windows.service.ts`
+    - `apps/api/src/modules/auth/auth.module.ts`
+    - `apps/api/src/modules/admin/members/member-admin.service.ts` (`approveApplication`)
+    - `apps/api/prisma/seed.ts`
+    - `packages/shared/src/errors/error-codes.ts`
     - `packages/shared/src/schemas/auth.schema.ts`
-  - **Problem:** Signup does not consult `DriveWindowsService`. When the membership drive is closed, the UI displays "Membership drive is closed", but the API allows arbitrary registrations. Institutional email domain and enrollment number format are unverified.
+    - `tests/unit/shared/auth-schemas.spec.ts`
+    - `tests/unit/api/modules/auth/auth.service.spec.ts`
+    - `tests/unit/api/modules/admin/member-admin.service.spec.ts`
+    - `tests/e2e/auth.e2e-spec.ts`
+  - **Problem:** Signup does not consult `DriveWindowsService`. When the membership drive is closed, the UI displays "Membership drive is closed", but the API allows arbitrary registrations. Institutional email domain and enrollment number format are unverified. Approval asserted `is_on_roster: true` unconditionally.
   - **Remediation Plan:**
-    1. Check `DriveWindowsService.isDriveOpen()` in `AuthService.signup()` and throw `ForbiddenException` if closed (unless an authorized invite token is supplied).
-    2. Validate institutional email domain format (e.g. `@gcet.edu.in`) and enrollment number regex.
-    3. Add tests for signup attempts during closed drive windows.
+    1. Check `DriveWindowsService.isDriveOpen()` in `AuthService.signup()` and throw `ForbiddenException` if closed.
+    2. Validate institutional email domain format (`@gcet.edu.in`, `@gcet.ac.in`) and enrollment number regex.
+    3. Eliminate unconditional `is_on_roster: true` in `approveApplication` by querying academic roster.
+    4. Add unit and E2E tests for signup attempts during closed drive windows.
 
 - [ ] **TASK-019 [HIGH] [B11 / HR-009 / F38]: Reconcile Asset Upload Body Parser Limit & Enforce Encoded Size Limits**
   - **Severity:** High (HTTP 413 Denial of Service / Contract Inconsistency)

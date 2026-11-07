@@ -15,6 +15,7 @@ describe('MemberAdminService (M8)', () => {
     };
     rosterEntry: {
       findMany: jest.Mock;
+      findFirst: jest.Mock;
     };
     role: {
       findUnique: jest.Mock;
@@ -48,6 +49,7 @@ describe('MemberAdminService (M8)', () => {
       },
       rosterEntry: {
         findMany: jest.fn(),
+        findFirst: jest.fn(),
       },
       role: {
         findUnique: jest.fn(),
@@ -152,6 +154,7 @@ describe('MemberAdminService (M8)', () => {
 
       mockPrisma.user.findUnique.mockResolvedValue(pendingUser);
       mockPrisma.user.update.mockResolvedValue(updatedUser);
+      mockPrisma.rosterEntry.findFirst.mockResolvedValue({ id: 're-1', enrollmentNo: '23CS101' });
       mockPrisma.role.findUnique.mockResolvedValue({ id: 'role-member', code: RoleCode.MEMBER });
       mockPrisma.roleAssignment.findFirst.mockResolvedValue(null);
       mockPrisma.roleAssignment.create.mockResolvedValue({ id: 'ra-1' });
@@ -161,6 +164,15 @@ describe('MemberAdminService (M8)', () => {
 
       expect(result.id).toBe('user-1');
       expect(result.status).toBe(UserStatus.ACTIVE);
+      expect(result.is_on_roster).toBe(true);
+      expect(mockPrisma.rosterEntry.findFirst).toHaveBeenCalledWith({
+        where: {
+          enrollmentNo: {
+            equals: '23CS101',
+            mode: 'insensitive',
+          },
+        },
+      });
       expect(mockPrisma.user.update).toHaveBeenCalledWith({
         where: { id: 'user-1' },
         data: { status: UserStatus.ACTIVE },
@@ -182,6 +194,40 @@ describe('MemberAdminService (M8)', () => {
           }),
         }),
       );
+    });
+
+    it('sets is_on_roster: false when applicant is not on academic roster (TASK-018 / F04)', async () => {
+      const pendingUser = {
+        id: 'user-2',
+        name: 'Bob Smith',
+        email: 'bob@gcet.edu.in',
+        enrollmentNo: '99CS999',
+        phone: '9876543211',
+        branch: 'CSE',
+        year: 1,
+        status: UserStatus.PENDING,
+        createdAt: new Date('2026-08-01T10:00:00Z'),
+        updatedAt: new Date('2026-08-01T10:00:00Z'),
+      };
+      const updatedUser = {
+        ...pendingUser,
+        status: UserStatus.ACTIVE,
+        updatedAt: new Date('2026-08-01T12:00:00Z'),
+      };
+
+      mockPrisma.user.findUnique.mockResolvedValue(pendingUser);
+      mockPrisma.user.update.mockResolvedValue(updatedUser);
+      mockPrisma.rosterEntry.findFirst.mockResolvedValue(null);
+      mockPrisma.role.findUnique.mockResolvedValue({ id: 'role-member', code: RoleCode.MEMBER });
+      mockPrisma.roleAssignment.findFirst.mockResolvedValue(null);
+      mockPrisma.roleAssignment.create.mockResolvedValue({ id: 'ra-2' });
+      mockPrisma.auditLog.create.mockResolvedValue({ id: 'audit-2' });
+
+      const result = await service.approveApplication('user-2', 'admin-1');
+
+      expect(result.id).toBe('user-2');
+      expect(result.status).toBe(UserStatus.ACTIVE);
+      expect(result.is_on_roster).toBe(false);
     });
 
     it('throws NotFoundException if user is not found', async () => {

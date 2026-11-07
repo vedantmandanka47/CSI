@@ -16,11 +16,31 @@ export const PasswordSchema = z
   .regex(/[0-9]/, 'Password must contain at least one number')
   .regex(/[^A-Za-z0-9]/, 'Password must contain at least one special character');
 
+export const InstitutionalEmailSchema = EmailSchema.refine(
+  (email) => /^[a-zA-Z0-9._%+-]+@(gcet\.edu\.in|gcet\.ac\.in)$/i.test(email),
+  {
+    message: 'Registration requires a valid GCET institutional email address (@gcet.edu.in or @gcet.ac.in)',
+  },
+);
+
+export const EnrollmentNoSchema = z
+  .string()
+  .trim()
+  .optional()
+  .nullable()
+  .transform((val) => (val === '' ? null : val))
+  .refine(
+    (val) => val === null || val === undefined || /^[0-9A-Za-z]{6,20}$/.test(val),
+    {
+      message: 'Enrollment number must be between 6 and 20 alphanumeric characters',
+    },
+  );
+
 export const SignupPayloadSchema = z.object({
-  email: EmailSchema,
+  email: InstitutionalEmailSchema,
   password: PasswordSchema,
   full_name: z.string().min(2, 'Name must be at least 2 characters').max(100, 'Name cannot exceed 100 characters').trim(),
-  enrollment_no: z.string().trim().optional().nullable(),
+  enrollment_no: EnrollmentNoSchema,
   phone: z.string().trim().optional().nullable(),
 });
 

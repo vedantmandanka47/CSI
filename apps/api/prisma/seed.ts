@@ -116,6 +116,28 @@ async function main() {
   }
   console.log(`✅ Seeded ${committees.length} committees.`);
 
+  // Seed default membership recruitment drive window (TASK-018)
+  const oneYearFromNow = new Date();
+  oneYearFromNow.setFullYear(oneYearFromNow.getFullYear() + 1);
+  const oneMonthAgo = new Date();
+  oneMonthAgo.setMonth(oneMonthAgo.getMonth() - 1);
+
+  await prisma.driveWindow.upsert({
+    where: { type: 'membership' },
+    update: {
+      isOpen: true,
+      opensAt: oneMonthAgo,
+      closesAt: oneYearFromNow,
+    },
+    create: {
+      type: 'membership',
+      isOpen: true,
+      opensAt: oneMonthAgo,
+      closesAt: oneYearFromNow,
+    },
+  });
+  console.log('✅ Seeded default membership drive window.');
+
   console.log('🌱 Seeding complete.');
 }
 

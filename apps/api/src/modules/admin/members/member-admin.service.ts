@@ -154,7 +154,21 @@ export class MemberAdminService {
         }
       }
 
-      // 3. Write immutable audit log
+      // 3. Dynamic roster verification (TASK-018 / F04)
+      let isOnRoster = false;
+      if (updatedUser.enrollmentNo) {
+        const rosterMatch = await tx.rosterEntry.findFirst({
+          where: {
+            enrollmentNo: {
+              equals: updatedUser.enrollmentNo,
+              mode: 'insensitive',
+            },
+          },
+        });
+        isOnRoster = Boolean(rosterMatch);
+      }
+
+      // 4. Write immutable audit log
       await tx.auditLog.create({
         data: {
           actorId,
@@ -179,7 +193,7 @@ export class MemberAdminService {
         branch: updatedUser.branch,
         year: updatedUser.year,
         status: updatedUser.status,
-        is_on_roster: true,
+        is_on_roster: isOnRoster,
         created_at: updatedUser.createdAt.toISOString(),
         updated_at: updatedUser.updatedAt.toISOString(),
       };
