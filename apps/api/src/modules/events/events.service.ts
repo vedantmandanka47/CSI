@@ -287,10 +287,25 @@ export class EventsService {
       const event = lockedRows[0]!;
       const now = new Date();
 
-      if (event.state === EventState.CANCELLED || event.state === EventState.DRAFT) {
+      // Enforce active lifecycle state
+      const activeStates = [
+        EventState.PUBLISHED,
+        EventState.REGISTRATION_OPEN,
+        EventState.LIVE,
+      ] as string[];
+
+      if (!activeStates.includes(event.state)) {
         throw new BadRequestException({
           code: ErrorCode.EVENT_NOT_LIVE,
           message: 'Registrations are not accepted for this event.',
+        });
+      }
+
+      // Enforce event conclusion cutoff
+      if (event.ends_at && new Date(event.ends_at) <= now) {
+        throw new BadRequestException({
+          code: ErrorCode.EVENT_NOT_LIVE,
+          message: 'This event has already ended.',
         });
       }
 

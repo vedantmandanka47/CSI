@@ -288,6 +288,175 @@ describe('EventsService', () => {
       expect(response.status).toBe(RegistrationStatus.WAITLISTED);
       expect(response.message).toContain('placed on the waitlist');
     });
+
+    it('rejects member registration when event is in terminal state COMPLETED (TASK-016 / F12)', async () => {
+      mockPrisma.$queryRaw.mockResolvedValueOnce([
+        {
+          id: sampleEvent.id,
+          capacity: 5,
+          state: EventState.COMPLETED,
+          registration_opens_at: null,
+          registration_closes_at: null,
+          starts_at: new Date(Date.now() - 7200000),
+          ends_at: new Date(Date.now() - 3600000),
+        },
+      ]);
+
+      try {
+        await service.registerMember(sampleEvent.id, 'user-123');
+        fail('Should have thrown BadRequestException');
+      } catch (err: unknown) {
+        expect(err).toBeInstanceOf(BadRequestException);
+        expect((err as BadRequestException).getResponse()).toMatchObject({
+          code: ErrorCode.EVENT_NOT_LIVE,
+        });
+      }
+    });
+
+    it('rejects member registration when event is in terminal state CERTIFIED (TASK-016 / F12)', async () => {
+      mockPrisma.$queryRaw.mockResolvedValueOnce([
+        {
+          id: sampleEvent.id,
+          capacity: 5,
+          state: EventState.CERTIFIED,
+          registration_opens_at: null,
+          registration_closes_at: null,
+          starts_at: new Date(Date.now() - 7200000),
+          ends_at: new Date(Date.now() - 3600000),
+        },
+      ]);
+
+      try {
+        await service.registerMember(sampleEvent.id, 'user-123');
+        fail('Should have thrown BadRequestException');
+      } catch (err: unknown) {
+        expect(err).toBeInstanceOf(BadRequestException);
+        expect((err as BadRequestException).getResponse()).toMatchObject({
+          code: ErrorCode.EVENT_NOT_LIVE,
+        });
+      }
+    });
+
+    it('rejects member registration when event is in state CANCELLED', async () => {
+      mockPrisma.$queryRaw.mockResolvedValueOnce([
+        {
+          id: sampleEvent.id,
+          capacity: 5,
+          state: EventState.CANCELLED,
+          registration_opens_at: null,
+          registration_closes_at: null,
+          starts_at: new Date(Date.now() + 7200000),
+          ends_at: new Date(Date.now() + 10800000),
+        },
+      ]);
+
+      try {
+        await service.registerMember(sampleEvent.id, 'user-123');
+        fail('Should have thrown BadRequestException');
+      } catch (err: unknown) {
+        expect(err).toBeInstanceOf(BadRequestException);
+        expect((err as BadRequestException).getResponse()).toMatchObject({
+          code: ErrorCode.EVENT_NOT_LIVE,
+        });
+      }
+    });
+
+    it('rejects member registration when event is in state DRAFT', async () => {
+      mockPrisma.$queryRaw.mockResolvedValueOnce([
+        {
+          id: sampleEvent.id,
+          capacity: 5,
+          state: EventState.DRAFT,
+          registration_opens_at: null,
+          registration_closes_at: null,
+          starts_at: new Date(Date.now() + 7200000),
+          ends_at: new Date(Date.now() + 10800000),
+        },
+      ]);
+
+      try {
+        await service.registerMember(sampleEvent.id, 'user-123');
+        fail('Should have thrown BadRequestException');
+      } catch (err: unknown) {
+        expect(err).toBeInstanceOf(BadRequestException);
+        expect((err as BadRequestException).getResponse()).toMatchObject({
+          code: ErrorCode.EVENT_NOT_LIVE,
+        });
+      }
+    });
+
+    it('rejects member registration when event has already ended without explicit windows (TASK-016 / F12)', async () => {
+      mockPrisma.$queryRaw.mockResolvedValueOnce([
+        {
+          id: sampleEvent.id,
+          capacity: 5,
+          state: EventState.PUBLISHED,
+          registration_opens_at: null,
+          registration_closes_at: null,
+          starts_at: new Date(Date.now() - 7200000),
+          ends_at: new Date(Date.now() - 1000),
+        },
+      ]);
+
+      try {
+        await service.registerMember(sampleEvent.id, 'user-123');
+        fail('Should have thrown BadRequestException');
+      } catch (err: unknown) {
+        expect(err).toBeInstanceOf(BadRequestException);
+        expect((err as BadRequestException).getResponse()).toMatchObject({
+          code: ErrorCode.EVENT_NOT_LIVE,
+        });
+        expect((err as BadRequestException).message).toContain('already ended');
+      }
+    });
+
+    it('rejects member registration before registration window opens', async () => {
+      mockPrisma.$queryRaw.mockResolvedValueOnce([
+        {
+          id: sampleEvent.id,
+          capacity: 5,
+          state: EventState.PUBLISHED,
+          registration_opens_at: new Date(Date.now() + 3600000),
+          registration_closes_at: new Date(Date.now() + 7200000),
+          starts_at: new Date(Date.now() + 8000000),
+          ends_at: new Date(Date.now() + 10000000),
+        },
+      ]);
+
+      try {
+        await service.registerMember(sampleEvent.id, 'user-123');
+        fail('Should have thrown BadRequestException');
+      } catch (err: unknown) {
+        expect(err).toBeInstanceOf(BadRequestException);
+        expect((err as BadRequestException).getResponse()).toMatchObject({
+          code: ErrorCode.REGISTRATION_CLOSED,
+        });
+      }
+    });
+
+    it('rejects member registration after registration window closes', async () => {
+      mockPrisma.$queryRaw.mockResolvedValueOnce([
+        {
+          id: sampleEvent.id,
+          capacity: 5,
+          state: EventState.PUBLISHED,
+          registration_opens_at: new Date(Date.now() - 7200000),
+          registration_closes_at: new Date(Date.now() - 1000),
+          starts_at: new Date(Date.now() + 3600000),
+          ends_at: new Date(Date.now() + 7200000),
+        },
+      ]);
+
+      try {
+        await service.registerMember(sampleEvent.id, 'user-123');
+        fail('Should have thrown BadRequestException');
+      } catch (err: unknown) {
+        expect(err).toBeInstanceOf(BadRequestException);
+        expect((err as BadRequestException).getResponse()).toMatchObject({
+          code: ErrorCode.REGISTRATION_CLOSED,
+        });
+      }
+    });
   });
 
   describe('registerGuest', () => {

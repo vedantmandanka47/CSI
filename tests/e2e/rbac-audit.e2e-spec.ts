@@ -490,6 +490,56 @@ describe('RBAC & Audit Trail Subsystem (E2E) (ARCH-05, ARCH-06, SEC-23)', () => 
       });
       expect(totalSeatConsuming).toBe(3);
     });
+
+    it('rejects member registration for event in terminal state COMPLETED (TASK-016 / F12)', async () => {
+      const completedEvent = await prisma.event.create({
+        data: {
+          title: 'Member Audit Completed Event',
+          slug: 'member-audit-completed-event',
+          category: 'workshop',
+          description: 'Testing member terminal state',
+          state: 'completed',
+          startsAt: new Date(Date.now() - 86400000),
+          endsAt: new Date(Date.now() - 3600000),
+          capacity: 10,
+        },
+      });
+
+      const res = await request(app.getHttpServer())
+        .post(`/api/events/${completedEvent.id}/register`)
+        .set('Cookie', [memberSessionCookie, csrfCookie])
+        .set('x-csrf-token', csrfToken)
+        .send({})
+        .expect(400);
+
+      expect(res.body.error.code).toBe(ErrorCode.EVENT_NOT_LIVE);
+      expect(res.body.error.message).toContain('not accepted');
+    });
+
+    it('rejects member registration for past concluded event without explicit windows (TASK-016 / F12)', async () => {
+      const pastEvent = await prisma.event.create({
+        data: {
+          title: 'Member Audit Past Event',
+          slug: 'member-audit-past-event',
+          category: 'workshop',
+          description: 'Testing member concluded event without windows',
+          state: 'published',
+          startsAt: new Date(Date.now() - 86400000),
+          endsAt: new Date(Date.now() - 10000),
+          capacity: 10,
+        },
+      });
+
+      const res = await request(app.getHttpServer())
+        .post(`/api/events/${pastEvent.id}/register`)
+        .set('Cookie', [memberSessionCookie, csrfCookie])
+        .set('x-csrf-token', csrfToken)
+        .send({})
+        .expect(400);
+
+      expect(res.body.error.code).toBe(ErrorCode.EVENT_NOT_LIVE);
+      expect(res.body.error.message).toContain('already ended');
+    });
   });
 
   describe('Guest Event Registration Windows & Terminal State Enforcement (TASK-015 / B18 / F11)', () => {

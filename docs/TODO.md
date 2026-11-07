@@ -25,7 +25,7 @@ This document is the unified, authoritative remediation master plan for the CSI 
 | :--- | :--- | :---: | :---: | :---: | :---: |
 | **Phase 0** | Critical Account & Authentication Blockers | 6 | 6 | 0 | 0 |
 | **Phase 1** | Build Pipeline, Toolchain & Runtime Initialization | 5 | 5 | 0 | 0 |
-| **Phase 2** | Core Domain Logic, Event Capacities & Role Boundaries | 8 | 4 | 0 | 4 |
+| **Phase 2** | Core Domain Logic, Event Capacities & Role Boundaries | 8 | 5 | 0 | 3 |
 | **Phase 3** | Attendance, Offline Sync & Scanner System | 7 | 0 | 0 | 7 |
 | **Phase 4** | Document Engine, Batch Processing & File Storage Durability | 9 | 0 | 0 | 9 |
 | **Phase 5** | Annual Rollover, Checklists, Workspaces & Transactions | 5 | 0 | 0 | 5 |
@@ -34,7 +34,7 @@ This document is the unified, authoritative remediation master plan for the CSI 
 | **Phase 8** | Database, Disaster Recovery, Backup & Archive Safety | 7 | 4 | 1 | 2 |
 | **Phase 9** | API Validation, Error Handling, Client Resilience & E2E | 4 | 0 | 0 | 4 |
 | **Phase 10** | Production Operations, Deployment Recipes & Documentation | 5 | 0 | 0 | 5 |
-| **TOTAL** | **Comprehensive Full-Platform Remediation** | **66** | **20** | **0** | **46** |
+| **TOTAL** | **Comprehensive Full-Platform Remediation** | **66** | **21** | **0** | **45** |
 
 ---
 
@@ -339,10 +339,18 @@ This document is the unified, authoritative remediation master plan for the CSI 
     2. Reject registration if the event has ended or reached a terminal state.
     3. Add unit tests verifying expired and completed events reject guest registrations.
 
-- [ ] **TASK-016 [MEDIUM] [F12]: Enforce Terminal State and Event End-Time Checks for Member Registrations**
+- [x] **TASK-016 [MEDIUM] [F12]: Enforce Terminal State and Event End-Time Checks for Member Registrations**
   - **Severity:** Medium (Business Logic Flaw)
+  - **Completed:**
+    - Hardened lifecycle state validation in `EventsService.registerMember` to reject non-active or terminal event states (`DRAFT`, `CANCELLED`, `COMPLETED`, `CERTIFIED`) with `BadRequestException` (`ErrorCode.EVENT_NOT_LIVE`).
+    - Enforced event conclusion cutoff (`ends_at <= now`) on unconfigured registration windows with `BadRequestException` (`ErrorCode.EVENT_NOT_LIVE`).
+    - Aligned member registration admission policy symmetrically with guest admission policy.
+    - Added unit test coverage in `tests/unit/api/modules/events/events.service.spec.ts` asserting member registration rejections on terminal states `COMPLETED`, `CERTIFIED`, `CANCELLED`, `DRAFT`, past ended events without explicit windows, unopened windows, and closed windows (33/33 tests passing).
+    - Added live PostgreSQL E2E tests in `tests/e2e/rbac-audit.e2e-spec.ts` asserting member registration rejections on `COMPLETED` events and past ended events without explicit windows (22/22 tests passing).
   - **Affected Files:**
     - `apps/api/src/modules/events/events.service.ts` (`registerMember`)
+    - `tests/unit/api/modules/events/events.service.spec.ts`
+    - `tests/e2e/rbac-audit.e2e-spec.ts`
   - **Problem:** `registerMember` checks optional registration windows, but does not enforce event end time if the registration window is unconfigured.
   - **Remediation Plan:**
     1. Ensure member registration enforces event end time and active status identical to the guest check.
