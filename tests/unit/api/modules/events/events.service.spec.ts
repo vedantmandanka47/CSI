@@ -2,7 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { NotFoundException, ConflictException, BadRequestException } from '@nestjs/common';
 import { EventsService } from '../../../../../apps/api/src/modules/events/events.service.js';
 import { PrismaService } from '../../../../../apps/api/src/infra/prisma/prisma.service.js';
-import { EventState, RegistrationStatus, EventCategory } from '@csi/shared';
+import { EventState, RegistrationStatus, EventCategory, ErrorCode, SEAT_CONSUMING_STATUSES } from '@csi/shared';
 
 interface MockPrisma {
   event: {
@@ -234,6 +234,60 @@ describe('EventsService', () => {
         ConflictException,
       );
     });
+
+    it('rejects re-registration for attendee already marked as attended (ALREADY_ATTENDED)', async () => {
+      mockPrisma.$queryRaw.mockResolvedValueOnce([
+        {
+          id: sampleEvent.id,
+          capacity: 2,
+          state: EventState.PUBLISHED,
+          registration_opens_at: null,
+          registration_closes_at: null,
+        },
+      ]);
+      mockPrisma.registration.findUnique.mockResolvedValueOnce({
+        id: 'attended-reg',
+        status: RegistrationStatus.ATTENDED,
+      });
+
+      try {
+        await service.registerMember(sampleEvent.id, 'user-attended');
+        fail('Should have thrown ConflictException');
+      } catch (err: unknown) {
+        expect(err).toBeInstanceOf(ConflictException);
+        expect((err as ConflictException).getResponse()).toMatchObject({
+          code: ErrorCode.ALREADY_ATTENDED,
+        });
+      }
+    });
+
+    it('places member on waitlist when combined count of registered and attended reaches capacity', async () => {
+      mockPrisma.$queryRaw.mockResolvedValueOnce([
+        {
+          id: sampleEvent.id,
+          capacity: 2,
+          state: EventState.PUBLISHED,
+          registration_opens_at: null,
+          registration_closes_at: null,
+        },
+      ]);
+      mockPrisma.registration.findUnique.mockResolvedValueOnce(null);
+      // 1 member registered + 1 member attended = 2 total seat-consuming
+      mockPrisma.registration.count.mockImplementation(({ where }: { where: { status: { in: string[] } } }) => {
+        expect(where.status.in).toEqual([...SEAT_CONSUMING_STATUSES]);
+        return Promise.resolve(2);
+      });
+      mockPrisma.eventGuest.count.mockResolvedValueOnce(0);
+      mockPrisma.registration.create.mockResolvedValueOnce({
+        id: 'reg-waitlist-attended-capacity',
+        registeredAt: new Date(),
+      });
+
+      const response = await service.registerMember(sampleEvent.id, 'user-new');
+
+      expect(response.status).toBe(RegistrationStatus.WAITLISTED);
+      expect(response.message).toContain('placed on the waitlist');
+    });
   });
 
   describe('cancelRegistration & waitlist promotion', () => {
@@ -257,6 +311,25 @@ describe('EventsService', () => {
           data: expect.objectContaining({ action: 'WAITLIST_PROMOTED_MEMBER' }),
         }),
       );
+    });
+
+    it('blocks cancellation when registration is already marked as attended (CANNOT_CANCEL_ATTENDED)', async () => {
+      mockPrisma.$queryRaw.mockResolvedValueOnce([{ id: sampleEvent.id, capacity: 2 }]);
+      mockPrisma.registration.findUnique.mockResolvedValueOnce({
+        id: 'reg-attended',
+        status: RegistrationStatus.ATTENDED,
+      });
+
+      try {
+        await service.cancelRegistration(sampleEvent.id, 'attended-user');
+        fail('Should have thrown BadRequestException');
+      } catch (err: unknown) {
+        expect(err).toBeInstanceOf(BadRequestException);
+        expect((err as BadRequestException).getResponse()).toMatchObject({
+          code: ErrorCode.CANNOT_CANCEL_ATTENDED,
+        });
+      }
+      expect(mockPrisma.registration.update).not.toHaveBeenCalled();
     });
   });
 

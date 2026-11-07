@@ -26,6 +26,8 @@ import {
   AttendanceSyncResult,
   ErrorCode,
   UserStatus,
+  RegistrationStatus,
+  SEAT_CONSUMING_STATUSES,
 } from '@csi/shared';
 
 @Injectable()
@@ -265,9 +267,9 @@ export class AttendanceService {
         where: {
           eventId: session.eventId,
           userId: memberId,
-          status: 'registered',
+          status: RegistrationStatus.REGISTERED,
         },
-        data: { status: 'attended' },
+        data: { status: RegistrationStatus.ATTENDED },
       });
 
       await tx.auditLog.create({
@@ -389,9 +391,9 @@ export class AttendanceService {
         where: {
           eventId: session.eventId,
           userId: input.member_id,
-          status: 'registered',
+          status: RegistrationStatus.REGISTERED,
         },
-        data: { status: 'attended' },
+        data: { status: RegistrationStatus.ATTENDED },
       });
 
       await tx.auditLog.create({
@@ -495,9 +497,9 @@ export class AttendanceService {
         where: {
           eventId: session.eventId,
           userId: input.member_id,
-          status: 'registered',
+          status: RegistrationStatus.REGISTERED,
         },
-        data: { status: 'attended' },
+        data: { status: RegistrationStatus.ATTENDED },
       });
 
       await tx.auditLog.create({
@@ -703,9 +705,9 @@ export class AttendanceService {
           where: {
             eventId: session.eventId,
             userId: targetMemberId,
-            status: 'registered',
+            status: RegistrationStatus.REGISTERED,
           },
-          data: { status: 'attended' },
+          data: { status: RegistrationStatus.ATTENDED },
         });
 
         results.push({
@@ -750,7 +752,7 @@ export class AttendanceService {
         where: {
           eventId: session.eventId,
           userId: memberId,
-          status: { in: ['registered', 'attended'] },
+          status: { in: [...SEAT_CONSUMING_STATUSES] },
         },
       });
 

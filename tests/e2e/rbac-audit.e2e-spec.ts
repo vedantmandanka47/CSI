@@ -6,7 +6,7 @@ import { AppModule } from '../../apps/api/src/app.module.js';
 import { PrismaService } from '../../apps/api/src/infra/prisma/prisma.service.js';
 import { hashPassword, generateSecureToken, hashToken } from '../../apps/api/src/common/crypto/tokens.js';
 import { assertStrictTestDatabase } from '../../apps/api/src/common/guards/test-db-guard.js';
-import { RoleCode, UserStatus } from '@csi/shared';
+import { RoleCode, UserStatus, RegistrationStatus, ErrorCode } from '@csi/shared';
 
 describe('RBAC & Audit Trail Subsystem (E2E) (ARCH-05, ARCH-06, SEC-23)', () => {
   let app: INestApplication;
@@ -307,6 +307,188 @@ describe('RBAC & Audit Trail Subsystem (E2E) (ARCH-05, ARCH-06, SEC-23)', () => 
         .expect(200);
 
       expect(res.body.message).toContain('cancelled');
+    });
+
+    it('blocks attendee who has already attended from cancelling with 400 CANNOT_CANCEL_ATTENDED (TASK-014 / B18 / F10)', async () => {
+      // 1. Re-register member
+      await request(app.getHttpServer())
+        .post(`/api/events/${testEventId}/register`)
+        .set('Cookie', [memberSessionCookie, csrfCookie])
+        .set('x-csrf-token', csrfToken)
+        .send({ notes: 'Attending symposium' })
+        .expect(200);
+
+      // 2. Simulate attendance check-in (status = attended)
+      await prisma.registration.updateMany({
+        where: { eventId: testEventId, userId: memberUserId },
+        data: { status: RegistrationStatus.ATTENDED },
+      });
+
+      // 3. Attempting to cancel must be blocked
+      const cancelRes = await request(app.getHttpServer())
+        .post(`/api/events/${testEventId}/cancel`)
+        .set('Cookie', [memberSessionCookie, csrfCookie])
+        .set('x-csrf-token', csrfToken)
+        .send({})
+        .expect(400);
+
+      expect(cancelRes.body.error.code).toBe(ErrorCode.CANNOT_CANCEL_ATTENDED);
+    });
+
+    it('blocks attendee who has already attended from re-registering with 409 ALREADY_ATTENDED (TASK-014 / B18 / F10)', async () => {
+      // Member is currently marked ATTENDED
+      const regRes = await request(app.getHttpServer())
+        .post(`/api/events/${testEventId}/register`)
+        .set('Cookie', [memberSessionCookie, csrfCookie])
+        .set('x-csrf-token', csrfToken)
+        .send({ notes: 'Attempting duplicate registration' })
+        .expect(409);
+
+      expect(regRes.body.error.code).toBe(ErrorCode.ALREADY_ATTENDED);
+    });
+
+    it('enforces capacity when attendee is ATTENDED and places subsequent registrant on waitlist (TASK-014 / B18 / F10)', async () => {
+      // 1. Set event capacity to 1 so the attended member saturates the event
+      await prisma.event.update({
+        where: { id: testEventId },
+        data: { capacity: 1 },
+      });
+
+      // 2. Create second member user
+      const user2 = await prisma.user.create({
+        data: {
+          email: 'member2.capacity@gcet.ac.in',
+          name: 'Second Member',
+          passwordHash: 'dummy',
+          status: UserStatus.ACTIVE,
+        },
+      });
+
+      await prisma.roleAssignment.create({
+        data: {
+          userId: user2.id,
+          roleId: memberRoleId,
+        },
+      });
+
+      // 3. Create session for user2
+      const rawToken2 = generateSecureToken();
+      const tokenHash2 = hashToken(rawToken2);
+      await prisma.session.create({
+        data: {
+          userId: user2.id,
+          tokenHash: tokenHash2,
+          expiresAt: new Date(Date.now() + 86400000),
+        },
+      });
+      const cookie2 = `csi_session=${rawToken2}; Path=/; HttpOnly; SameSite=Strict`;
+
+      // 4. User 2 registers: since capacity = 1 and user 1 is ATTENDED (which consumes a seat),
+      // User 2 must be placed on WAITLISTED, NOT registered!
+      const res = await request(app.getHttpServer())
+        .post(`/api/events/${testEventId}/register`)
+        .set('Cookie', [cookie2, csrfCookie])
+        .set('x-csrf-token', csrfToken)
+        .send({})
+        .expect(200);
+
+      expect(res.body.data.status).toBe(RegistrationStatus.WAITLISTED);
+      expect(res.body.data.message).toContain('waitlist');
+    });
+
+    it('prevents capacity overflow during concurrent registrations with active attendees (TASK-014 / B18 / F10)', async () => {
+      // 1. Create dedicated event with capacity = 3
+      const concEvent = await prisma.event.create({
+        data: {
+          title: 'Concurrency Capacity Event',
+          slug: 'concurrency-capacity-event',
+          category: 'workshop',
+          description: 'Testing concurrency capacity limits',
+          state: 'published',
+          startsAt: new Date(Date.now() + 86400000),
+          endsAt: new Date(Date.now() + 90000000),
+          capacity: 3,
+        },
+      });
+
+      // 2. User 1 is already checked in (ATTENDED) - consuming 1 of the 3 seats
+      const attendedUser = await prisma.user.create({
+        data: {
+          email: 'attended.conc@gcet.ac.in',
+          name: 'Attended Member',
+          passwordHash: 'dummy',
+          status: UserStatus.ACTIVE,
+        },
+      });
+      await prisma.registration.create({
+        data: {
+          eventId: concEvent.id,
+          userId: attendedUser.id,
+          status: RegistrationStatus.ATTENDED,
+        },
+      });
+
+      // 3. Create 4 distinct candidate members
+      const candidates: { cookie: string; id: string }[] = [];
+      for (let i = 1; i <= 4; i++) {
+        const cand = await prisma.user.create({
+          data: {
+            email: `candidate${i}.conc@gcet.ac.in`,
+            name: `Candidate ${i}`,
+            passwordHash: 'dummy',
+            status: UserStatus.ACTIVE,
+          },
+        });
+        await prisma.roleAssignment.create({
+          data: {
+            userId: cand.id,
+            roleId: memberRoleId,
+          },
+        });
+        const token = generateSecureToken();
+        await prisma.session.create({
+          data: {
+            userId: cand.id,
+            tokenHash: hashToken(token),
+            expiresAt: new Date(Date.now() + 86400000),
+          },
+        });
+        candidates.push({
+          id: cand.id,
+          cookie: `csi_session=${token}; Path=/; HttpOnly; SameSite=Strict`,
+        });
+      }
+
+      // 4. Fire 4 simultaneous registration requests under load
+      const results = await Promise.all(
+        candidates.map((cand) =>
+          request(app.getHttpServer())
+            .post(`/api/events/${concEvent.id}/register`)
+            .set('Cookie', [cand.cookie, csrfCookie])
+            .set('x-csrf-token', csrfToken)
+            .send({}),
+        ),
+      );
+
+      for (const res of results) {
+        expect(res.status).toBe(200);
+      }
+
+      const registeredCount = results.filter((r) => r.body.data.status === RegistrationStatus.REGISTERED).length;
+      const waitlistedCount = results.filter((r) => r.body.data.status === RegistrationStatus.WAITLISTED).length;
+
+      // Exactly 2 of the 4 could be seated (since capacity = 3 and 1 seat was ATTENDED)
+      expect(registeredCount).toBe(2);
+      expect(waitlistedCount).toBe(2);
+
+      // Verify total seat-consuming records in DB equals exactly event capacity (3)
+      const totalSeatConsuming = await prisma.registration.count({
+        where: {
+          eventId: concEvent.id,
+          status: { in: [RegistrationStatus.REGISTERED, RegistrationStatus.ATTENDED] },
+        },
+      });
+      expect(totalSeatConsuming).toBe(3);
     });
   });
 

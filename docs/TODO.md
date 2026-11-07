@@ -25,7 +25,7 @@ This document is the unified, authoritative remediation master plan for the CSI 
 | :--- | :--- | :---: | :---: | :---: | :---: |
 | **Phase 0** | Critical Account & Authentication Blockers | 6 | 6 | 0 | 0 |
 | **Phase 1** | Build Pipeline, Toolchain & Runtime Initialization | 5 | 5 | 0 | 0 |
-| **Phase 2** | Core Domain Logic, Event Capacities & Role Boundaries | 8 | 2 | 0 | 6 |
+| **Phase 2** | Core Domain Logic, Event Capacities & Role Boundaries | 8 | 3 | 0 | 5 |
 | **Phase 3** | Attendance, Offline Sync & Scanner System | 7 | 0 | 0 | 7 |
 | **Phase 4** | Document Engine, Batch Processing & File Storage Durability | 9 | 0 | 0 | 9 |
 | **Phase 5** | Annual Rollover, Checklists, Workspaces & Transactions | 5 | 0 | 0 | 5 |
@@ -34,7 +34,7 @@ This document is the unified, authoritative remediation master plan for the CSI 
 | **Phase 8** | Database, Disaster Recovery, Backup & Archive Safety | 7 | 4 | 1 | 2 |
 | **Phase 9** | API Validation, Error Handling, Client Resilience & E2E | 4 | 0 | 0 | 4 |
 | **Phase 10** | Production Operations, Deployment Recipes & Documentation | 5 | 0 | 0 | 5 |
-| **TOTAL** | **Comprehensive Full-Platform Remediation** | **66** | **18** | **0** | **48** |
+| **TOTAL** | **Comprehensive Full-Platform Remediation** | **66** | **19** | **0** | **47** |
 
 ---
 
@@ -308,7 +308,7 @@ This document is the unified, authoritative remediation master plan for the CSI 
     3. Require sensitive action re-authentication (password confirmation) for rollover execution.
     4. Add self-escalation and peer-escalation regression tests.
 
-- [ ] **TASK-014 [HIGH] [B18 / F10]: Event Capacity Accounting & Attendee Re-registration Fix**
+- [x] **TASK-014 [HIGH] [B18 / F10]: Event Capacity Accounting & Attendee Re-registration Fix**
   - **Severity:** High (Data Integrity / Capacity Overflow)
   - **Affected Files:**
     - `apps/api/src/modules/attendance/attendance.service.ts`

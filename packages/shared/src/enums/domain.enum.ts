@@ -29,6 +29,11 @@ export const RegistrationStatus = {
 
 export type RegistrationStatus = (typeof RegistrationStatus)[keyof typeof RegistrationStatus];
 
+export const SEAT_CONSUMING_STATUSES = [
+  RegistrationStatus.REGISTERED,
+  RegistrationStatus.ATTENDED,
+] as const;
+
 export const AttendanceAudience = {
   ALL: 'all',
   PARTICIPANTS: 'participants',

@@ -14,6 +14,7 @@ import {
   RegistrationResponse,
   EventState,
   RegistrationStatus,
+  SEAT_CONSUMING_STATUSES,
   ErrorCode,
   CreateEventInput,
   CreateEventRawInput,
@@ -116,8 +117,8 @@ export class EventsService {
           venue: true,
           _count: {
             select: {
-              registrations: { where: { status: RegistrationStatus.REGISTERED } },
-              guests: { where: { status: RegistrationStatus.REGISTERED } },
+              registrations: { where: { status: { in: [...SEAT_CONSUMING_STATUSES] } } },
+              guests: { where: { status: { in: [...SEAT_CONSUMING_STATUSES] } } },
             },
           },
         },
@@ -193,8 +194,8 @@ export class EventsService {
         venue: true,
         _count: {
           select: {
-            registrations: { where: { status: RegistrationStatus.REGISTERED } },
-            guests: { where: { status: RegistrationStatus.REGISTERED } },
+            registrations: { where: { status: { in: [...SEAT_CONSUMING_STATUSES] } } },
+            guests: { where: { status: { in: [...SEAT_CONSUMING_STATUSES] } } },
           },
         },
       },
@@ -330,14 +331,20 @@ export class EventsService {
             message: 'You are already on the waitlist for this event.',
           });
         }
+        if (existing.status === RegistrationStatus.ATTENDED) {
+          throw new ConflictException({
+            code: ErrorCode.ALREADY_ATTENDED,
+            message: 'You have already attended this event and cannot re-register.',
+          });
+        }
       }
 
       // 3. Count active registrations under lock
       const memberCount = await tx.registration.count({
-        where: { eventId, status: RegistrationStatus.REGISTERED },
+        where: { eventId, status: { in: [...SEAT_CONSUMING_STATUSES] } },
       });
       const guestCount = await tx.eventGuest.count({
-        where: { eventId, status: RegistrationStatus.REGISTERED },
+        where: { eventId, status: { in: [...SEAT_CONSUMING_STATUSES] } },
       });
       const totalRegistered = memberCount + guestCount;
 
@@ -446,10 +453,10 @@ export class EventsService {
 
       // Count active registrations
       const memberCount = await tx.registration.count({
-        where: { eventId, status: RegistrationStatus.REGISTERED },
+        where: { eventId, status: { in: [...SEAT_CONSUMING_STATUSES] } },
       });
       const guestCount = await tx.eventGuest.count({
-        where: { eventId, status: RegistrationStatus.REGISTERED },
+        where: { eventId, status: { in: [...SEAT_CONSUMING_STATUSES] } },
       });
       const totalRegistered = memberCount + guestCount;
 
@@ -524,6 +531,13 @@ export class EventsService {
         throw new BadRequestException({
           code: ErrorCode.NOT_FOUND,
           message: 'No active registration found for this event.',
+        });
+      }
+
+      if (existing.status === RegistrationStatus.ATTENDED) {
+        throw new BadRequestException({
+          code: ErrorCode.CANNOT_CANCEL_ATTENDED,
+          message: 'Cannot cancel a registration that has already been marked as attended.',
         });
       }
 
