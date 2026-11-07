@@ -101,6 +101,7 @@ export const CertificateDetailSchema = z.object({
   eventId: z.string().uuid(),
   recipientType: z.string(),
   recipientId: z.string().uuid().nullable().optional(),
+  guestRecipientId: z.string().uuid().nullable().optional(),
   recipientEmail: z.string().email(),
   recipientName: z.string(),
   certificateType: z.string(),

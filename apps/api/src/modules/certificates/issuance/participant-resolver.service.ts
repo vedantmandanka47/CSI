@@ -8,6 +8,7 @@ import {
 export interface ResolvedParticipant {
   recipientType: 'member' | 'guest';
   recipientId?: string;
+  guestRecipientId?: string;
   recipientEmail: string;
   recipientName: string;
   achievement?: string;
@@ -144,7 +145,7 @@ export class ParticipantResolverService {
 
       result.push({
         recipientType: 'guest',
-        recipientId: g.id,
+        guestRecipientId: g.id,
         recipientEmail: normalizedEmail,
         recipientName: g.name,
         achievement: explicit?.achievement,
@@ -213,7 +214,7 @@ export class ParticipantResolverService {
 
       result.push({
         recipientType: 'guest',
-        recipientId: g.id,
+        guestRecipientId: g.id,
         recipientEmail: normalizedEmail,
         recipientName: g.name,
         achievement: explicit?.achievement,
@@ -292,7 +293,7 @@ export class ParticipantResolverService {
       } else if (dbGuest) {
         result.push({
           recipientType: 'guest',
-          recipientId: dbGuest.id,
+          guestRecipientId: dbGuest.id,
           recipientEmail: normalizedEmail,
           recipientName: dbGuest.name,
           achievement: r.achievement,

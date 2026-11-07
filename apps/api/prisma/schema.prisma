@@ -249,7 +249,8 @@ model EventGuest {
   status    String   @default("registered") @db.VarChar(50)
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  event     Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  event        Event         @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  certificates Certificate[]
 
   @@unique([eventId, email], name: "event_guest_unique")
   @@index([eventId, status])
@@ -366,9 +367,10 @@ model Certificate {
   id                String            @id @default(uuid()) @db.Uuid
   batchId           String?           @map("batch_id") @db.Uuid
   eventId           String            @map("event_id") @db.Uuid
-  recipientType     String            @default("member") @map("recipient_type") @db.VarChar(20)
-  recipientId       String?           @map("recipient_id") @db.Uuid
-  recipientEmail    String            @map("recipient_email") @db.Citext
+  recipientType        String            @default("member") @map("recipient_type") @db.VarChar(20)
+  recipientId          String?           @map("recipient_id") @db.Uuid
+  guestRecipientId     String?           @map("guest_recipient_id") @db.Uuid
+  recipientEmail       String            @map("recipient_email") @db.Citext
   recipientName     String            @map("recipient_name") @db.VarChar(150)
   certificateType   String            @default("participation") @map("certificate_type") @db.VarChar(50)
   certificateNumber String            @unique @map("certificate_number") @db.VarChar(100)
@@ -392,12 +394,14 @@ model Certificate {
   batch             CertificateBatch? @relation(fields: [batchId], references: [id], onDelete: SetNull)
   event             Event             @relation(fields: [eventId], references: [id], onDelete: Cascade)
   recipient         User?             @relation(fields: [recipientId], references: [id], onDelete: SetNull)
+  guestRecipient    EventGuest?       @relation(fields: [guestRecipientId], references: [id], onDelete: SetNull)
   revokedBy         User?             @relation("RevokedCertificates", fields: [revokedById], references: [id], onDelete: SetNull)
 
   @@unique([eventId, recipientEmail, certificateType], name: "event_email_cert_type_unique")
   @@index([eventId, status])
   @@index([status])
   @@index([recipientId])
+  @@index([guestRecipientId])
   @@index([batchId, status])
   @@index([revokedById])
   @@map("certificates")

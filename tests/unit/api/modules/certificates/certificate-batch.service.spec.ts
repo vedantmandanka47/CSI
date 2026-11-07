@@ -83,6 +83,9 @@ describe('Certificate Batch Subsystem (M12 Unit Tests)', () => {
 
   beforeEach(async () => {
     jest.clearAllMocks();
+    mockPrisma.$transaction.mockImplementation((cb: (tx: typeof mockPrisma) => Promise<unknown>) =>
+      cb(mockPrisma),
+    );
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -216,8 +219,16 @@ describe('Certificate Batch Subsystem (M12 Unit Tests)', () => {
       );
 
       expect(result).toHaveLength(2);
+      expect(result[0]?.recipientType).toBe('member');
+      expect(result[0]?.recipientId).toBe('user-1');
+      expect(result[0]?.guestRecipientId).toBeUndefined();
       expect(result[0]?.recipientEmail).toBe('member@gcet.ac.in');
+
+      expect(result[1]?.recipientType).toBe('guest');
+      expect(result[1]?.recipientId).toBeUndefined();
+      expect(result[1]?.guestRecipientId).toBe('guest-1');
       expect(result[1]?.recipientEmail).toBe('guest@other.edu');
+      expect(result[1]?.collegeName).toBe('Other Uni');
     });
 
     it('should deduplicate participants with duplicate emails', async () => {
@@ -370,6 +381,90 @@ describe('Certificate Batch Subsystem (M12 Unit Tests)', () => {
 
       expect(result).toEqual(cachedResponse);
       expect(mockPrisma.event.findUnique).not.toHaveBeenCalled();
+    });
+
+    it('should safely issue certificates to guests with recipientId=null and guestRecipientId=guest.id (TASK-012 / B06 / F21)', async () => {
+      const eventId = 'e0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11';
+      mockPrisma.idempotencyKey.findUnique.mockResolvedValue(null);
+      mockPrisma.event.findUnique.mockResolvedValue({
+        id: eventId,
+        slug: 'guest-symposium',
+        title: 'Guest Tech Symposium',
+        category: 'symposium',
+      });
+
+      jest.spyOn(resolver, 'resolveEligibleParticipants').mockResolvedValue([
+        {
+          recipientType: 'member',
+          recipientId: 'u-member-1',
+          recipientEmail: 'member@gcet.ac.in',
+          recipientName: 'Member Student',
+          collegeName: 'GCET Engineering College',
+        },
+        {
+          recipientType: 'guest',
+          guestRecipientId: 'g-guest-1',
+          recipientEmail: 'guest@external.edu',
+          recipientName: 'External Guest',
+          collegeName: 'External University',
+        },
+      ]);
+
+      mockPrisma.certificateBatch.create.mockResolvedValue({
+        id: 'batch-guest-1',
+        eventId,
+        templateId: 'csi-default-participation',
+        certificateType: 'participation',
+        status: BatchStatus.PENDING,
+        totalCount: 2,
+        successCount: 0,
+        failedCount: 0,
+        createdById: 'admin-id',
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        completedAt: null,
+      });
+
+      mockPrisma.certificate.findMany.mockResolvedValue([]);
+      mockPrisma.certificate.createMany.mockResolvedValue({ count: 2 });
+      mockPrisma.idempotencyKey.upsert.mockResolvedValue({});
+      mockPrisma.auditLog.create.mockResolvedValue({});
+
+      const result = await issuanceService.createBatch(
+        {
+          eventId,
+          templateId: 'csi-default-participation',
+          certificateType: 'participation',
+          eligibilityMode: RecipientEligibilityMode.VERIFIED_ATTENDANCE,
+        },
+        'admin-id',
+      );
+
+      expect(result.id).toBe('batch-guest-1');
+      expect(result.totalCount).toBe(2);
+
+      // Verify createMany wrote recipientId: null for guest, and guestRecipientId: 'g-guest-1'
+      expect(mockPrisma.certificate.createMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: [
+            expect.objectContaining({
+              recipientType: 'member',
+              recipientId: 'u-member-1',
+              guestRecipientId: null,
+              recipientEmail: 'member@gcet.ac.in',
+            }),
+            expect.objectContaining({
+              recipientType: 'guest',
+              recipientId: null,
+              guestRecipientId: 'g-guest-1',
+              recipientEmail: 'guest@external.edu',
+              metadata: expect.objectContaining({
+                collegeName: 'External University',
+              }),
+            }),
+          ],
+        }),
+      );
     });
 
     it('should enforce download authorization checks', async () => {

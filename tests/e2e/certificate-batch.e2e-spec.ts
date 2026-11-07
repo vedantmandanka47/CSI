@@ -524,4 +524,123 @@ describe('Certificate Batch & Idempotency Subsystem (E2E) (M12)', () => {
         .expect(403);
     });
   });
+
+  describe('5. Guest Certificate Issuance & Recipient FK Resolution (TASK-012 / B06 / F21)', () => {
+    it('successfully creates and processes a certificate batch for external guests without foreign key constraint violation', async () => {
+      // 1. Create a specialized event for external guests
+      const guestEvent = await prisma.event.create({
+        data: {
+          slug: 'inter-college-hackathon-2026',
+          title: 'Inter-College Hackathon 2026',
+          description: 'Annual Inter-College Hackathon',
+          category: 'hackathon',
+          startsAt: new Date('2026-11-01T09:00:00Z'),
+          endsAt: new Date('2026-11-01T18:00:00Z'),
+          capacity: 50,
+          state: 'published',
+        },
+      });
+
+      // 2. Register an external guest
+      const externalGuest = await prisma.eventGuest.create({
+        data: {
+          eventId: guestEvent.id,
+          name: 'External Guest Scholar',
+          email: 'scholar.guest@otheruniversity.edu',
+          college: 'Premier Institute of Technology',
+          phone: '+919876543210',
+          status: 'registered',
+        },
+      });
+
+      // 3. Create attendance session and mark verified guest attendance
+      const attSession = await prisma.attendanceSession.create({
+        data: {
+          eventId: guestEvent.id,
+          name: 'Hackathon Attendance Session',
+          startsAt: new Date('2026-11-01T09:00:00Z'),
+          endsAt: new Date('2026-11-01T12:00:00Z'),
+          totpSecret: 'JBSWY3DPEHPK3PXP',
+          createdById: adminUserId,
+        },
+      });
+
+      await prisma.attendanceRecord.create({
+        data: {
+          sessionId: attSession.id,
+          eventId: guestEvent.id,
+          subjectType: 'guest',
+          subjectId: externalGuest.id,
+          method: 'qr_scan',
+          status: 'verified',
+          clientUuid: 'test-client-uuid-m12-guest',
+          markedById: adminUserId,
+        },
+      });
+
+      // 4. Issue certificate batch for verified attendance containing external guests
+      const batchRes = await request(app.getHttpServer())
+        .post('/api/certificates/batches')
+        .set('Cookie', [adminSessionCookie, csrfCookie])
+        .set('X-CSRF-Token', csrfToken)
+        .send({
+          eventId: guestEvent.id,
+          certificateType: CertificateType.PARTICIPATION,
+          eligibilityMode: RecipientEligibilityMode.VERIFIED_ATTENDANCE,
+        })
+        .expect(201);
+
+      expect(batchRes.body.id).toBeDefined();
+      expect(batchRes.body.totalCount).toBe(1);
+      const guestBatchId = batchRes.body.id;
+
+      // 5. Query PostgreSQL directly to verify foreign key resolution
+      const issuedCert = await prisma.certificate.findFirst({
+        where: { batchId: guestBatchId },
+      });
+
+      expect(issuedCert).toBeDefined();
+      expect(issuedCert?.recipientType).toBe('guest');
+      // Crucial: recipientId must be null to prevent foreign key violation on users.id
+      expect(issuedCert?.recipientId).toBeNull();
+      // guestRecipientId must reference event_guests.id
+      expect(issuedCert?.guestRecipientId).toBe(externalGuest.id);
+      expect(issuedCert?.recipientEmail).toBe('scholar.guest@otheruniversity.edu');
+
+      // 6. Process the batch and verify PDF generation for guest
+      await batchProcessor.processBatch(guestBatchId);
+
+      const updatedBatch = await request(app.getHttpServer())
+        .get(`/api/certificates/batches/${guestBatchId}`)
+        .set('Cookie', [adminSessionCookie])
+        .expect(200);
+
+      expect(updatedBatch.body.status).toBe('completed');
+      expect(updatedBatch.body.successCount).toBe(1);
+      expect(updatedBatch.body.failedCount).toBe(0);
+
+      // 7. Verify generated certificate details and download
+      const certDetailRes = await request(app.getHttpServer())
+        .get(`/api/certificates/batches/${guestBatchId}/certificates`)
+        .set('Cookie', [adminSessionCookie])
+        .expect(200);
+
+      expect(certDetailRes.body.certificates).toHaveLength(1);
+      const certItem = certDetailRes.body.certificates[0];
+      expect(certItem.recipientType).toBe('guest');
+      expect(certItem.guestRecipientId).toBe(externalGuest.id);
+      expect(certItem.recipientId).toBeNull();
+      expect(certItem.status).toBe('generated');
+
+      // 8. Download guest certificate PDF and verify it is valid PDF
+      const downloadRes = await request(app.getHttpServer())
+        .get(`/api/certificates/${issuedCert!.id}/download`)
+        .set('Cookie', [adminSessionCookie])
+        .expect(200);
+
+      expect(downloadRes.headers['content-type']).toBe('application/pdf');
+      const pdfDoc = await PDFDocument.load(downloadRes.body);
+      expect(pdfDoc.getPageCount()).toBe(1);
+    });
+  });
 });

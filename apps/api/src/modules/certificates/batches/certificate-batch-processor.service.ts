@@ -122,9 +122,17 @@ export class CertificateBatchProcessorService {
             const verificationUrl =
               this.verificationCodeService.buildVerificationUrl(formattedVerificationCode);
 
+            const metadataObj =
+              typeof cert.metadata === 'object' && cert.metadata !== null
+                ? (cert.metadata as Record<string, string>)
+                : undefined;
+
             const certData: CertificateData = {
               recipient_name: cert.recipientName,
-              recipient_id: cert.recipientId || cert.id,
+              recipient_id:
+                cert.recipientId ||
+                (cert as { guestRecipientId?: string | null }).guestRecipientId ||
+                cert.id,
               event_title: batch.event.title,
               event_category: batch.event.category,
               issue_date: cert.issueDate,
@@ -132,11 +140,8 @@ export class CertificateBatchProcessorService {
               certificate_number: cert.certificateNumber,
               verification_code: formattedVerificationCode,
               verification_url: verificationUrl,
-              college_name: 'GCET Engineering College',
-              custom_placeholders:
-                typeof cert.metadata === 'object' && cert.metadata !== null
-                  ? (cert.metadata as Record<string, string>)
-                  : undefined,
+              college_name: metadataObj?.collegeName || 'GCET Engineering College',
+              custom_placeholders: metadataObj,
             };
 
             // Render PDF via M11 Pure JS Engine

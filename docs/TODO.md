@@ -25,7 +25,7 @@ This document is the unified, authoritative remediation master plan for the CSI 
 | :--- | :--- | :---: | :---: | :---: | :---: |
 | **Phase 0** | Critical Account & Authentication Blockers | 6 | 6 | 0 | 0 |
 | **Phase 1** | Build Pipeline, Toolchain & Runtime Initialization | 5 | 5 | 0 | 0 |
-| **Phase 2** | Core Domain Logic, Event Capacities & Role Boundaries | 8 | 0 | 0 | 8 |
+| **Phase 2** | Core Domain Logic, Event Capacities & Role Boundaries | 8 | 1 | 0 | 7 |
 | **Phase 3** | Attendance, Offline Sync & Scanner System | 7 | 0 | 0 | 7 |
 | **Phase 4** | Document Engine, Batch Processing & File Storage Durability | 9 | 0 | 0 | 9 |
 | **Phase 5** | Annual Rollover, Checklists, Workspaces & Transactions | 5 | 0 | 0 | 5 |
@@ -34,7 +34,7 @@ This document is the unified, authoritative remediation master plan for the CSI 
 | **Phase 8** | Database, Disaster Recovery, Backup & Archive Safety | 7 | 4 | 1 | 2 |
 | **Phase 9** | API Validation, Error Handling, Client Resilience & E2E | 4 | 0 | 0 | 4 |
 | **Phase 10** | Production Operations, Deployment Recipes & Documentation | 5 | 0 | 0 | 5 |
-| **TOTAL** | **Comprehensive Full-Platform Remediation** | **66** | **16** | **1** | **49** |
+| **TOTAL** | **Comprehensive Full-Platform Remediation** | **66** | **17** | **1** | **48** |
 
 ---
 
@@ -267,13 +267,26 @@ This document is the unified, authoritative remediation master plan for the CSI 
 
 ### Phase 2: Core Domain Logic, Event Capacities & Role Boundaries
 
-- [ ] **TASK-012 [HIGH] [B06 / F21]: Resolve Guest Certificate Recipient Foreign Key Violation**
+- [x] **TASK-012 [HIGH] [B06 / F21]: Resolve Guest Certificate Recipient Foreign Key Violation**
   - **Severity:** High (Database Foreign Key Constraint Violation)
+  - **Completed:**
+    - Modeled distinct `guestRecipientId` on `Certificate` referencing `EventGuest.id` with `onDelete: SetNull` alongside existing `recipientId` referencing `User.id`.
+    - Created database migration `20261110000000_guest_certificate_recipient` and down rollback script, applied across environments.
+    - Updated `ParticipantResolverService` across attendance, registration, and explicit eligibility modes to assign `recipientId` exclusively to members and `guestRecipientId` to guests.
+    - Hardened `CertificateIssuanceService.createBatch` to write `recipientId: null` for guests, completely eliminating foreign key violations against `users(id)`.
+    - Updated `@csi/shared` `CertificateDetailSchema` and `CertificateBatchProcessorService` to support guest identifiers and custom college names.
+    - Added unit test coverage in `tests/unit/api/modules/certificates/certificate-batch.service.spec.ts` (17/17 passing).
+    - Added end-to-end integration tests in `tests/e2e/certificate-batch.e2e-spec.ts` issuing, generating, and downloading guest certificates against live PostgreSQL (19/19 passing).
   - **Affected Files:**
+    - `apps/api/prisma/schema.prisma`
+    - `apps/api/prisma/migrations/20261110000000_guest_certificate_recipient/migration.sql` (new)
+    - `apps/api/prisma/migrations/20261110000000_guest_certificate_recipient/down.sql` (new)
+    - `packages/shared/src/schemas/certificate-batch.schema.ts`
     - `apps/api/src/modules/certificates/issuance/participant-resolver.service.ts`
     - `apps/api/src/modules/certificates/issuance/certificate-issuance.service.ts`
-    - `apps/api/prisma/schema.prisma`
-    - `apps/api/prisma/migrations/20261103000000_certificates_and_batches/migration.sql`
+    - `apps/api/src/modules/certificates/batches/certificate-batch-processor.service.ts`
+    - `tests/unit/api/modules/certificates/certificate-batch.service.spec.ts`
+    - `tests/e2e/certificate-batch.e2e-spec.ts`
   - **Problem:** `ParticipantResolver` assigns `recipientId = event_guests.id` for external guests. `certificate-issuance.service.ts` writes this to `certificates.recipient_id`, which has a strict foreign key to `users.id`. Any certificate issued to a guest triggers a database foreign key error.
   - **Remediation Plan:**
     1. Model recipient references properly in `schema.prisma`: either make `recipient_id` nullable and add `guest_recipient_id` referencing `event_guests.id`, or introduce an explicit polymorphic recipient enum.

@@ -168,18 +168,24 @@ export class CertificateIssuanceService {
           input.certificateType,
         );
 
+        const isMember = p.recipientType === 'member';
+
         return {
           batchId: newBatch.id,
           eventId: input.eventId,
           recipientType: p.recipientType,
-          recipientId: p.recipientId,
+          recipientId: isMember ? (p.recipientId ?? null) : null,
+          guestRecipientId: !isMember ? (p.guestRecipientId ?? null) : null,
           recipientEmail: p.recipientEmail,
           recipientName: p.recipientName,
           certificateType: input.certificateType,
           certificateNumber: certNumber,
           issueDate,
           achievement: p.achievement,
-          metadata: p.customPlaceholders ? (p.customPlaceholders as unknown as Prisma.InputJsonValue) : undefined,
+          metadata: {
+            collegeName: p.collegeName,
+            ...(p.customPlaceholders || {}),
+          } as unknown as Prisma.InputJsonValue,
           status: CertificateStatus.PENDING,
         };
       });
@@ -501,6 +507,7 @@ export class CertificateIssuanceService {
       eventId: c.eventId,
       recipientType: c.recipientType,
       recipientId: c.recipientId,
+      guestRecipientId: (c as { guestRecipientId?: string | null }).guestRecipientId ?? null,
       recipientEmail: c.recipientEmail,
       recipientName: c.recipientName,
       certificateType: c.certificateType,
