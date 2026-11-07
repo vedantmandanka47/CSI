@@ -6,11 +6,20 @@ import {
 } from '@nestjs/common';
 import { AuthService } from '../../../../../apps/api/src/modules/auth/auth.service.js';
 import { PrismaService } from '../../../../../apps/api/src/infra/prisma/prisma.service.js';
+import { EmailService } from '../../../../../apps/api/src/infra/email/email.service.js';
 import { RoleCode, UserStatus } from '@csi/shared';
 import { hashPassword, generateSecureToken, hashToken } from '../../../../../apps/api/src/common/crypto/tokens.js';
 
 describe('AuthService (Phase 1 M3)', () => {
   let service: AuthService;
+  let mockEmailService: {
+    sendVerificationEmail: jest.Mock;
+    sendPasswordResetEmail: jest.Mock;
+    sendMail: jest.Mock;
+    getSentEmails: jest.Mock;
+    getLastSentEmail: jest.Mock;
+    clearSentEmails: jest.Mock;
+  };
   let mockPrisma: {
     user: {
       findUnique: jest.Mock;
@@ -82,12 +91,25 @@ describe('AuthService (Phase 1 M3)', () => {
       $transaction: jest.fn((callback) => callback(mockPrisma)),
     };
 
+    mockEmailService = {
+      sendVerificationEmail: jest.fn().mockResolvedValue(true),
+      sendPasswordResetEmail: jest.fn().mockResolvedValue(true),
+      sendMail: jest.fn().mockResolvedValue(true),
+      getSentEmails: jest.fn().mockReturnValue([]),
+      getLastSentEmail: jest.fn().mockReturnValue(undefined),
+      clearSentEmails: jest.fn(),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         AuthService,
         {
           provide: PrismaService,
           useValue: mockPrisma,
+        },
+        {
+          provide: EmailService,
+          useValue: mockEmailService,
         },
       ],
     }).compile();
@@ -114,6 +136,7 @@ describe('AuthService (Phase 1 M3)', () => {
       mockPrisma.user.create.mockResolvedValue({
         id: 'u-new',
         email: 'new@gcet.ac.in',
+        name: 'New Student',
         status: UserStatus.PENDING,
       });
 
@@ -125,14 +148,42 @@ describe('AuthService (Phase 1 M3)', () => {
       });
 
       expect(res.verificationRequired).toBe(true);
-      expect(res.verificationToken).toBeDefined();
+      expect((res as Record<string, unknown>).verificationToken).toBeUndefined();
       expect(mockPrisma.user.create).toHaveBeenCalled();
       expect(mockPrisma.verificationToken.create).toHaveBeenCalled();
+      expect(mockEmailService.sendVerificationEmail).toHaveBeenCalledWith(
+        'new@gcet.ac.in',
+        'New Student',
+        expect.any(String),
+      );
       expect(mockPrisma.auditLog.create).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({ action: 'AUTH_SIGNUP' }),
         }),
       );
+    });
+
+    it('never returns verificationToken in signup response envelope (TASK-003 / B03)', async () => {
+      mockPrisma.user.findUnique.mockResolvedValue(null);
+      mockPrisma.role.findUnique.mockResolvedValue({ id: 'role-member', code: RoleCode.MEMBER });
+      mockPrisma.user.create.mockResolvedValue({
+        id: 'u-secure',
+        email: 'secure@gcet.ac.in',
+        name: 'Secure Student',
+        status: UserStatus.PENDING,
+      });
+
+      const res = await service.signup({
+        email: 'secure@gcet.ac.in',
+        password: 'SecurePassword123!',
+        full_name: 'Secure Student',
+      });
+
+      expect(res).not.toHaveProperty('verificationToken');
+      expect(Object.keys(res).sort()).toEqual(
+        ['message', 'userId', 'verificationRequired'].sort(),
+      );
+      expect(mockEmailService.sendVerificationEmail).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -259,6 +310,7 @@ describe('AuthService (Phase 1 M3)', () => {
       mockPrisma.user.findUnique.mockResolvedValue({
         id: 'u-active-1',
         email: 'active@gcet.ac.in',
+        name: 'Active User',
         status: UserStatus.ACTIVE,
       });
 
@@ -288,6 +340,13 @@ describe('AuthService (Phase 1 M3)', () => {
         }),
       );
 
+      // Sends transactional password reset email (TASK-003)
+      expect(mockEmailService.sendPasswordResetEmail).toHaveBeenCalledWith(
+        'active@gcet.ac.in',
+        'Active User',
+        expect.any(String),
+      );
+
       // Audit log
       expect(mockPrisma.auditLog.create).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -313,6 +372,7 @@ describe('AuthService (Phase 1 M3)', () => {
       expect(Object.keys(res)).toEqual(['message']);
       expect(mockPrisma.passwordResetToken.create).not.toHaveBeenCalled();
       expect(mockPrisma.auditLog.create).not.toHaveBeenCalled();
+      expect(mockEmailService.sendPasswordResetEmail).not.toHaveBeenCalled();
     });
 
     it('returns identical uniform message for inactive/pending user without generating token', async () => {
@@ -331,6 +391,7 @@ describe('AuthService (Phase 1 M3)', () => {
       expect(Object.keys(res)).toEqual(['message']);
       expect(mockPrisma.passwordResetToken.create).not.toHaveBeenCalled();
       expect(mockPrisma.auditLog.create).not.toHaveBeenCalled();
+      expect(mockEmailService.sendPasswordResetEmail).not.toHaveBeenCalled();
     });
   });
 

@@ -4,12 +4,14 @@ import request from 'supertest';
 import cookieParser from 'cookie-parser';
 import { AppModule } from '../../apps/api/src/app.module.js';
 import { PrismaService } from '../../apps/api/src/infra/prisma/prisma.service.js';
+import { EmailService } from '../../apps/api/src/infra/email/email.service.js';
 import { assertStrictTestDatabase } from '../../apps/api/src/common/guards/test-db-guard.js';
 import { hashToken } from '../../apps/api/src/common/crypto/tokens.js';
 
 describe('Auth & Session Subsystem (E2E) (ARCH-05, ARCH-14, SEC-04, SEC-05, SEC-23)', () => {
   let app: INestApplication;
   let prisma: PrismaService;
+  let emailService: EmailService;
 
   beforeAll(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
@@ -22,6 +24,8 @@ describe('Auth & Session Subsystem (E2E) (ARCH-05, ARCH-14, SEC-04, SEC-05, SEC-
     await app.init();
 
     prisma = app.get(PrismaService);
+    emailService = app.get(EmailService);
+    emailService.clearSentEmails();
 
     // Fail-closed verification (U1 / Finding F-01): verify live target is csi_gcet_test before any deletion
     await assertStrictTestDatabase(prisma);
@@ -97,8 +101,15 @@ describe('Auth & Session Subsystem (E2E) (ARCH-05, ARCH-14, SEC-04, SEC-05, SEC-
       .expect(201);
 
     expect(res.body.verificationRequired).toBe(true);
-    expect(res.body.verificationToken).toBeDefined();
-    verificationToken = res.body.verificationToken;
+    // Verification token must NEVER be returned in response body (TASK-003 / B03 / F02)
+    expect(res.body.verificationToken).toBeUndefined();
+
+    // Verify token was dispatched securely via transactional email
+    const outboundEmail = emailService.getLastSentEmail();
+    expect(outboundEmail).toBeDefined();
+    expect(outboundEmail?.to).toBe(testEmail);
+    expect(outboundEmail?.token).toBeDefined();
+    verificationToken = outboundEmail!.token!;
 
     // Verify user was stored with status 'pending'
     const user = await prisma.user.findUnique({ where: { email: testEmail } });

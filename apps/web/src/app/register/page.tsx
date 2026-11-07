@@ -17,7 +17,6 @@ export default function RegisterPage() {
   const [fieldErrors, setFieldErrors] = useState<Record<string, string[]> | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
-  const [verificationToken, setVerificationToken] = useState<string | null>(null);
 
   // Password requirements calculation
   const hasMinLength = password.length >= 10;
@@ -45,10 +44,9 @@ export default function RegisterPage() {
     setSubmitting(true);
 
     try {
-      const res = await apiClient.post<{
+      await apiClient.post<{
         message: string;
         verificationRequired: boolean;
-        verificationToken?: string;
       }>('/auth/signup', {
         full_name: fullName,
         email,
@@ -58,9 +56,6 @@ export default function RegisterPage() {
       });
 
       setIsSuccess(true);
-      if (res.verificationToken) {
-        setVerificationToken(res.verificationToken);
-      }
     } catch (err: unknown) {
       if (err instanceof ApiError) {
         setErrorMsg(err.message);
@@ -86,28 +81,10 @@ export default function RegisterPage() {
           </div>
           <h1 className="font-display text-2xl font-bold text-text">Registration Submitted</h1>
           <p className="text-xs leading-relaxed text-text-muted">
-            Your CSI GCET student account has been created. Please verify your institutional email
-            address to complete membership activation.
+            Your CSI GCET student account has been created. A verification link has been sent to your
+            institutional email address. Please check your inbox and click the verification link to
+            complete your membership activation.
           </p>
-
-          {verificationToken && (
-            <div className="mt-4 rounded-lg border border-border bg-surface-raised p-4 text-left space-y-2">
-              <span className="text-xs font-semibold uppercase tracking-wider text-text-muted block">
-                Verification Token (Development &amp; Testing)
-              </span>
-              <p className="font-mono text-xs break-all text-primary bg-surface p-2 rounded border border-border/60">
-                {verificationToken}
-              </p>
-              <div className="pt-2 text-center">
-                <Link
-                  href={`/verify-email?token=${verificationToken}`}
-                  className="inline-block text-xs font-semibold text-primary underline hover:opacity-80"
-                >
-                  Verify Email Address Now
-                </Link>
-              </div>
-            </div>
-          )}
 
           <div className="pt-2">
             <Link

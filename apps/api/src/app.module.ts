@@ -26,6 +26,7 @@ import { WorkspacesModule } from './modules/workspaces/workspaces.module.js';
 import { TermsModule } from './modules/terms/terms.module.js';
 import { MaintenanceModule } from './modules/maintenance/maintenance.module.js';
 import { PrismaModule } from './infra/prisma/prisma.module.js';
+import { EmailModule } from './infra/email/email.module.js';
 
 @Module({
   imports: [
@@ -81,6 +82,7 @@ import { PrismaModule } from './infra/prisma/prisma.module.js';
     TermsModule,
     MaintenanceModule,
     PrismaModule,
+    EmailModule,
   ],
   providers: [
     {

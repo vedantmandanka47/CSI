@@ -23,7 +23,7 @@ This document is the unified, authoritative remediation master plan for the CSI 
 
 | Phase | Description | Total Tasks | Completed | In Progress | Pending |
 | :--- | :--- | :---: | :---: | :---: | :---: |
-| **Phase 0** | Critical Account & Authentication Blockers | 6 | 2 | 0 | 4 |
+| **Phase 0** | Critical Account & Authentication Blockers | 6 | 3 | 0 | 3 |
 | **Phase 1** | Build Pipeline, Toolchain & Runtime Initialization | 5 | 5 | 0 | 0 |
 | **Phase 2** | Core Domain Logic, Event Capacities & Role Boundaries | 8 | 0 | 0 | 8 |
 | **Phase 3** | Attendance, Offline Sync & Scanner System | 7 | 0 | 0 | 7 |
@@ -34,7 +34,7 @@ This document is the unified, authoritative remediation master plan for the CSI 
 | **Phase 8** | Database, Disaster Recovery, Backup & Archive Safety | 7 | 4 | 1 | 2 |
 | **Phase 9** | API Validation, Error Handling, Client Resilience & E2E | 4 | 0 | 0 | 4 |
 | **Phase 10** | Production Operations, Deployment Recipes & Documentation | 5 | 0 | 0 | 5 |
-| **TOTAL** | **Comprehensive Full-Platform Remediation** | **66** | **12** | **1** | **53** |
+| **TOTAL** | **Comprehensive Full-Platform Remediation** | **66** | **13** | **1** | **52** |
 
 ---
 
@@ -85,14 +85,25 @@ This document is the unified, authoritative remediation master plan for the CSI 
     2. Verify CSRF guard integration for authenticated mutations.
     3. Add HTTP-level integration tests verifying an authenticated member can register, cancel, and receive waitlist promotion.
 
-- [ ] **TASK-003 [CRITICAL] [B03 / F02 / CR-003]: Implement Production Transactional Email Transport & Remove Verification Token Leak**
+- [x] **TASK-003 [CRITICAL] [B03 / F02 / CR-003]: Implement Production Transactional Email Transport & Remove Verification Token Leak**
   - **Severity:** Critical (Identity Verification Bypass / Insecure Signup)
+  - **Completed:**
+    - Implemented production `EmailService` and global `EmailModule` (`apps/api/src/infra/email/`) using `nodemailer` and `MAIL_*` configuration from `env.ts`.
+    - Added responsive, branded HTML & plain-text templates for email verification (24h expiry) and password reset (1h expiry).
+    - Stripped `verificationToken` from `signup()` API response envelope in `apps/api/src/modules/auth/auth.service.ts` to prevent account takeover.
+    - Updated `apps/web/src/app/register/page.tsx` to remove the debug token display and direct bypass link, instructing user to check their email inbox.
+    - Wired `forgotPassword()` to send transactional password reset emails to active users with single-use reset links.
+    - Added dedicated unit tests (`tests/unit/api/infra/email/email.service.spec.ts`) and updated `auth.service.spec.ts` asserting negative token exposure in response.
+    - Verified complete end-to-end flow in `tests/e2e/auth.e2e-spec.ts` (11/11 passing).
   - **Affected Files:**
-    - `apps/api/src/modules/auth/auth.service.ts` (`signup`)
-    - `apps/web/src/app/register/page.tsx`
-    - `apps/api/src/infra/email/email.module.ts` (new)
     - `apps/api/src/infra/email/email.service.ts` (new)
-    - `apps/api/src/config/env.ts`
+    - `apps/api/src/infra/email/email.module.ts` (new)
+    - `apps/api/src/app.module.ts`
+    - `apps/api/src/modules/auth/auth.service.ts` (`signup`, `forgotPassword`)
+    - `apps/web/src/app/register/page.tsx`
+    - `tests/unit/api/infra/email/email.service.spec.ts` (new)
+    - `tests/unit/api/modules/auth/auth.service.spec.ts`
+    - `tests/e2e/auth.e2e-spec.ts`
   - **Problem:** Signup returns `verificationToken` directly in HTTP response body; frontend displays a direct link to verify. No email-sending code exists in the entire repository (no Nodemailer, SES, Resend, or SendGrid). Anyone can register any email (including faculty) and instantly self-activate without mailbox access.
   - **Remediation Plan:**
     1. Remove `verificationToken` from `signup` API response envelope and UI registration page.

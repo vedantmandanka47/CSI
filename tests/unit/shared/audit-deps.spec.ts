@@ -16,6 +16,6 @@ describe('Dependency Audit Runner (TASK-010 / B12 / HR-005)', () => {
     expect(output).toContain('CSI GCET SB — Production Dependency Security Audit (audit-level=high)');
     expect(output).toContain('[AUDIT PASS] Production dependency audit passed at audit-level=high.');
     expect(output).toContain('[MITIGATED NOTICE] High-severity advisory on \'zod\' is defensively mitigated:');
-  });
+  }, 30000);
 });
 

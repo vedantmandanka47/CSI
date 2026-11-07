@@ -6,6 +6,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../../infra/prisma/prisma.service.js';
+import { EmailService } from '../../infra/email/email.service.js';
 import {
   SignupPayload,
   LoginPayload,
@@ -23,7 +24,10 @@ import {
 
 @Injectable()
 export class AuthService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private emailService: EmailService,
+  ) {}
 
   /**
    * User Registration / Signup
@@ -31,7 +35,7 @@ export class AuthService {
   async signup(
     payload: SignupPayload,
     ip?: string,
-  ): Promise<{ message: string; verificationRequired: boolean; verificationToken: string; userId: string }> {
+  ): Promise<{ message: string; verificationRequired: boolean; userId: string }> {
     const existing = await this.prisma.user.findUnique({
       where: { email: payload.email },
     });
@@ -107,10 +111,16 @@ export class AuthService {
       return { user, token };
     });
 
+    // Send transactional verification email (TASK-003)
+    await this.emailService.sendVerificationEmail(
+      result.user.email,
+      result.user.name,
+      result.token,
+    );
+
     return {
-      message: 'Registration successful. Please verify your email.',
+      message: 'Registration successful. Please check your email inbox to verify your account.',
       verificationRequired: true,
-      verificationToken: result.token,
       userId: result.user.id,
     };
   }
@@ -355,6 +365,13 @@ export class AuthService {
         ip,
       },
     });
+
+    // Send transactional password reset email (TASK-003)
+    await this.emailService.sendPasswordResetEmail(
+      user.email,
+      user.name,
+      resetToken,
+    );
 
     return genericResponse;
   }
