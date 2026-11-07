@@ -191,6 +191,46 @@ describe('Auth & Session Subsystem (E2E) (ARCH-05, ARCH-14, SEC-04, SEC-05, SEC-
     await prisma.user.delete({ where: { id: deactUser.id } });
   });
 
+  it('4d. POST /api/auth/verify-email handles concurrent verification requests atomically (TASK-006)', async () => {
+    const raceEmail = 'concurrent.verify@gcet.ac.in';
+    const raceToken = 'concurrent-verify-token-' + Date.now();
+    const tokenHashStr = hashToken(raceToken);
+
+    const raceUser = await prisma.user.create({
+      data: {
+        email: raceEmail,
+        name: 'Concurrent Verify Student',
+        status: 'pending',
+        passwordHash: '$argon2id$placeholder',
+      },
+    });
+
+    await prisma.verificationToken.create({
+      data: {
+        userId: raceUser.id,
+        tokenHash: tokenHashStr,
+        expiresAt: new Date(Date.now() + 3600000),
+      },
+    });
+
+    // Fire 2 concurrent verify requests with the exact same token
+    const [resA, resB] = await Promise.all([
+      request(app.getHttpServer()).post('/api/auth/verify-email').send({ token: raceToken }),
+      request(app.getHttpServer()).post('/api/auth/verify-email').send({ token: raceToken }),
+    ]);
+
+    const statuses = [resA.status, resB.status].sort();
+    // Exactly one must succeed with 200, and exactly one must fail with 400
+    expect(statuses).toEqual([200, 400]);
+
+    const failedRes = resA.status === 400 ? resA : resB;
+    expect(failedRes.body.error.code).toMatch(/INVALID_TOKEN|ACCOUNT_NOT_ELIGIBLE/);
+
+    // Clean up
+    await prisma.verificationToken.deleteMany({ where: { userId: raceUser.id } });
+    await prisma.user.delete({ where: { id: raceUser.id } });
+  });
+
   it('5. POST /api/auth/login authenticates with Argon2id and sets HttpOnly csi_session cookie', async () => {
     const res = await request(app.getHttpServer())
       .post('/api/auth/login')
@@ -309,6 +349,17 @@ describe('Auth & Session Subsystem (E2E) (ARCH-05, ARCH-14, SEC-04, SEC-05, SEC-
       })
       .expect(401);
 
+    // Re-using the consumed reset token must fail fail-closed (TASK-006)
+    const reuseRes = await request(app.getHttpServer())
+      .post('/api/auth/reset-password')
+      .send({
+        token: knownResetToken,
+        new_password: 'YetAnotherPassword123!',
+      })
+      .expect(400);
+
+    expect(reuseRes.body.error.code).toBe('INVALID_TOKEN');
+
     // New password must succeed
     const newLoginRes = await request(app.getHttpServer())
       .post('/api/auth/login')
@@ -319,6 +370,38 @@ describe('Auth & Session Subsystem (E2E) (ARCH-05, ARCH-14, SEC-04, SEC-05, SEC-
       .expect(200);
 
     expect(newLoginRes.body.user.email).toBe(testEmail);
+  });
+
+  it('10b. POST /api/auth/reset-password handles concurrent reset requests atomically (TASK-006)', async () => {
+    const user = await prisma.user.findUnique({ where: { email: testEmail } });
+    expect(user).toBeDefined();
+
+    const concurrentResetToken = 'e2e-concurrent-reset-' + Date.now();
+    await prisma.passwordResetToken.create({
+      data: {
+        userId: user!.id,
+        tokenHash: hashToken(concurrentResetToken),
+        expiresAt: new Date(Date.now() + 60 * 60 * 1000),
+      },
+    });
+
+    // Fire 2 concurrent reset requests with the same token
+    const [resA, resB] = await Promise.all([
+      request(app.getHttpServer()).post('/api/auth/reset-password').send({
+        token: concurrentResetToken,
+        new_password: 'ConcurrentPassword1!',
+      }),
+      request(app.getHttpServer()).post('/api/auth/reset-password').send({
+        token: concurrentResetToken,
+        new_password: 'ConcurrentPassword2!',
+      }),
+    ]);
+
+    const statuses = [resA.status, resB.status].sort();
+    expect(statuses).toEqual([200, 400]);
+
+    const failedRes = resA.status === 400 ? resA : resB;
+    expect(failedRes.body.error.code).toBe('INVALID_TOKEN');
   });
 
   it('11. Rate limiter triggers 429 TOO_MANY_REQUESTS upon repeated abuse (SEC-05)', async () => {

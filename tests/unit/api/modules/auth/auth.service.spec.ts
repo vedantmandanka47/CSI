@@ -38,11 +38,13 @@ describe('AuthService (Phase 1 M3)', () => {
       create: jest.Mock;
       findUnique: jest.Mock;
       update: jest.Mock;
+      updateMany: jest.Mock;
     };
     passwordResetToken: {
       create: jest.Mock;
       findUnique: jest.Mock;
       update: jest.Mock;
+      updateMany: jest.Mock;
       deleteMany: jest.Mock;
     };
     session: {
@@ -75,11 +77,13 @@ describe('AuthService (Phase 1 M3)', () => {
         create: jest.fn(),
         findUnique: jest.fn(),
         update: jest.fn(),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
       passwordResetToken: {
         create: jest.fn(),
         findUnique: jest.fn(),
         update: jest.fn(),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
         deleteMany: jest.fn(),
       },
       session: {
@@ -208,7 +212,14 @@ describe('AuthService (Phase 1 M3)', () => {
 
       const res = await service.verifyEmail('valid-token');
       expect(res.message).toContain('successfully verified');
-      expect(mockPrisma.verificationToken.update).toHaveBeenCalled();
+      expect(mockPrisma.verificationToken.updateMany).toHaveBeenCalledWith({
+        where: {
+          id: 'vt-1',
+          usedAt: null,
+          expiresAt: { gt: expect.any(Date) },
+        },
+        data: { usedAt: expect.any(Date) },
+      });
       expect(mockPrisma.user.updateMany).toHaveBeenCalledWith({
         where: { id: 'u1', status: UserStatus.PENDING },
         data: { status: UserStatus.ACTIVE },
@@ -218,6 +229,59 @@ describe('AuthService (Phase 1 M3)', () => {
           data: expect.objectContaining({ action: 'AUTH_EMAIL_VERIFIED' }),
         }),
       );
+    });
+
+    it('aborts transaction with INVALID_TOKEN if verification token was already consumed (TASK-006 / HR-011 / F34)', async () => {
+      mockPrisma.verificationToken.findUnique.mockResolvedValue({
+        id: 'vt-consumed',
+        userId: 'u-consumed',
+        usedAt: null,
+        expiresAt: new Date(Date.now() + 100000),
+        user: { id: 'u-consumed', status: UserStatus.PENDING },
+      });
+      mockPrisma.verificationToken.updateMany.mockResolvedValue({ count: 0 });
+
+      await expect(service.verifyEmail('token-already-consumed')).rejects.toThrow(
+        expect.objectContaining({
+          response: expect.objectContaining({
+            code: 'INVALID_TOKEN',
+          }),
+        }),
+      );
+      expect(mockPrisma.user.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('handles concurrent verification requests safely where only one succeeds (TASK-006 race guard)', async () => {
+      mockPrisma.verificationToken.findUnique.mockResolvedValue({
+        id: 'vt-concurrent',
+        userId: 'u-concurrent',
+        usedAt: null,
+        expiresAt: new Date(Date.now() + 100000),
+        user: { id: 'u-concurrent', status: UserStatus.PENDING },
+      });
+      // First transaction gets count: 1, second concurrent transaction gets count: 0 (already consumed)
+      mockPrisma.verificationToken.updateMany
+        .mockResolvedValueOnce({ count: 1 })
+        .mockResolvedValueOnce({ count: 0 });
+      mockPrisma.user.updateMany.mockResolvedValue({ count: 1 });
+
+      const results = await Promise.allSettled([
+        service.verifyEmail('token-concurrent'),
+        service.verifyEmail('token-concurrent'),
+      ]);
+
+      const fulfilled = results.filter((r) => r.status === 'fulfilled');
+      const rejected = results.filter((r): r is PromiseRejectedResult => r.status === 'rejected');
+
+      expect(fulfilled).toHaveLength(1);
+      expect(rejected).toHaveLength(1);
+      const firstRejected = rejected[0];
+      expect(firstRejected).toBeDefined();
+      if (firstRejected) {
+        expect((firstRejected.reason as BadRequestException).getResponse()).toEqual(
+          expect.objectContaining({ code: 'INVALID_TOKEN' }),
+        );
+      }
     });
 
     it('rejects verification if user account is deactivated or rejected (TASK-004 / B04 / F03)', async () => {
@@ -467,13 +531,24 @@ describe('AuthService (Phase 1 M3)', () => {
         tokenHash,
         usedAt: null,
         expiresAt: new Date(Date.now() + 100000),
+        user: { id: 'u1', status: UserStatus.ACTIVE },
       });
 
       const res = await service.resetPassword(token, 'NewSecurePassword123!');
 
       expect(res.message).toContain('Password successfully reset');
-      expect(mockPrisma.passwordResetToken.update).toHaveBeenCalled();
-      expect(mockPrisma.user.update).toHaveBeenCalled();
+      expect(mockPrisma.passwordResetToken.updateMany).toHaveBeenCalledWith({
+        where: {
+          id: 'prt-1',
+          usedAt: null,
+          expiresAt: { gt: expect.any(Date) },
+        },
+        data: { usedAt: expect.any(Date) },
+      });
+      expect(mockPrisma.user.updateMany).toHaveBeenCalledWith({
+        where: { id: 'u1', status: UserStatus.ACTIVE },
+        data: { passwordHash: expect.any(String) },
+      });
       expect(mockPrisma.session.updateMany).toHaveBeenCalledWith({
         where: { userId: 'u1', revokedAt: null },
         data: expect.objectContaining({ revokedAt: expect.any(Date) }),
@@ -483,6 +558,90 @@ describe('AuthService (Phase 1 M3)', () => {
           data: expect.objectContaining({ action: 'AUTH_PASSWORD_RESET_SUCCESS' }),
         }),
       );
+    });
+
+    it('aborts transaction with INVALID_TOKEN if password reset token was already consumed (TASK-006 / HR-011 / F34)', async () => {
+      const token = generateSecureToken();
+      const tokenHash = hashToken(token);
+
+      mockPrisma.passwordResetToken.findUnique.mockResolvedValue({
+        id: 'prt-consumed',
+        userId: 'u1',
+        tokenHash,
+        usedAt: null,
+        expiresAt: new Date(Date.now() + 100000),
+        user: { id: 'u1', status: UserStatus.ACTIVE },
+      });
+      mockPrisma.passwordResetToken.updateMany.mockResolvedValue({ count: 0 });
+
+      await expect(service.resetPassword(token, 'NewSecurePassword123!')).rejects.toThrow(
+        expect.objectContaining({
+          response: expect.objectContaining({
+            code: 'INVALID_TOKEN',
+          }),
+        }),
+      );
+      expect(mockPrisma.user.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('aborts with ACCOUNT_NOT_ELIGIBLE if user is not active', async () => {
+      const token = generateSecureToken();
+      const tokenHash = hashToken(token);
+
+      mockPrisma.passwordResetToken.findUnique.mockResolvedValue({
+        id: 'prt-inactive',
+        userId: 'u-inactive',
+        tokenHash,
+        usedAt: null,
+        expiresAt: new Date(Date.now() + 100000),
+        user: { id: 'u-inactive', status: UserStatus.INACTIVE },
+      });
+
+      await expect(service.resetPassword(token, 'NewSecurePassword123!')).rejects.toThrow(
+        expect.objectContaining({
+          response: expect.objectContaining({
+            code: 'ACCOUNT_NOT_ELIGIBLE',
+          }),
+        }),
+      );
+      expect(mockPrisma.passwordResetToken.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('handles concurrent password reset requests safely where only one succeeds (TASK-006 race guard)', async () => {
+      const token = generateSecureToken();
+      const tokenHash = hashToken(token);
+
+      mockPrisma.passwordResetToken.findUnique.mockResolvedValue({
+        id: 'prt-concurrent',
+        userId: 'u1',
+        tokenHash,
+        usedAt: null,
+        expiresAt: new Date(Date.now() + 100000),
+        user: { id: 'u1', status: UserStatus.ACTIVE },
+      });
+      // First transaction succeeds in consuming token, second concurrent transaction gets count 0
+      mockPrisma.passwordResetToken.updateMany
+        .mockResolvedValueOnce({ count: 1 })
+        .mockResolvedValueOnce({ count: 0 });
+      mockPrisma.user.updateMany.mockResolvedValue({ count: 1 });
+
+      const results = await Promise.allSettled([
+        service.resetPassword(token, 'NewSecurePassword123!'),
+        service.resetPassword(token, 'NewSecurePassword123!'),
+      ]);
+
+      const fulfilled = results.filter((r) => r.status === 'fulfilled');
+      const rejected = results.filter((r): r is PromiseRejectedResult => r.status === 'rejected');
+
+      expect(fulfilled).toHaveLength(1);
+      expect(rejected).toHaveLength(1);
+      const firstRejected = rejected[0];
+      expect(firstRejected).toBeDefined();
+      if (firstRejected) {
+        expect((firstRejected.reason as BadRequestException).getResponse()).toEqual(
+          expect.objectContaining({ code: 'INVALID_TOKEN' }),
+        );
+      }
     });
   });
 });

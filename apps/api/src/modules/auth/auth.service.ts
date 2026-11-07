@@ -154,11 +154,22 @@ export class AuthService {
     }
 
     await this.prisma.$transaction(async (tx) => {
-      // 1. Mark token as consumed
-      await tx.verificationToken.update({
-        where: { id: verification.id },
+      // 1. Conditionally mark token as consumed (TASK-006 / HR-011 / F34)
+      const tokenConsumeResult = await tx.verificationToken.updateMany({
+        where: {
+          id: verification.id,
+          usedAt: null,
+          expiresAt: { gt: new Date() },
+        },
         data: { usedAt: new Date() },
       });
+
+      if (tokenConsumeResult.count === 0) {
+        throw new BadRequestException({
+          code: 'INVALID_TOKEN',
+          message: 'Verification token is invalid, expired, or already used',
+        });
+      }
 
       // 2. Conditionally update user status: ONLY allow transition from PENDING -> ACTIVE (TASK-004)
       const updateResult = await tx.user.updateMany({
@@ -421,20 +432,48 @@ export class AuthService {
       });
     }
 
+    if (resetRecord.user && resetRecord.user.status !== UserStatus.ACTIVE) {
+      throw new BadRequestException({
+        code: 'ACCOUNT_NOT_ELIGIBLE',
+        message: 'Account cannot reset password in its current status',
+      });
+    }
+
     const newPasswordHash = await hashPassword(newPassword);
 
     await this.prisma.$transaction(async (tx) => {
-      // 1. Mark token as consumed
-      await tx.passwordResetToken.update({
-        where: { id: resetRecord.id },
+      // 1. Conditionally mark token as consumed (TASK-006 / HR-011 / F34)
+      const tokenConsumeResult = await tx.passwordResetToken.updateMany({
+        where: {
+          id: resetRecord.id,
+          usedAt: null,
+          expiresAt: { gt: new Date() },
+        },
         data: { usedAt: new Date() },
       });
 
-      // 2. Update user's password
-      await tx.user.update({
-        where: { id: resetRecord.userId },
+      if (tokenConsumeResult.count === 0) {
+        throw new BadRequestException({
+          code: 'INVALID_TOKEN',
+          message: 'Password reset token is invalid, expired, or already used',
+        });
+      }
+
+      // 2. Conditionally update user's password: only allow if account is ACTIVE
+      const userUpdateResult = await tx.user.updateMany({
+        where: {
+          id: resetRecord.userId,
+          status: UserStatus.ACTIVE,
+        },
         data: { passwordHash: newPasswordHash },
       });
+
+      if (userUpdateResult.count === 0) {
+        throw new BadRequestException({
+          code: 'ACCOUNT_NOT_ELIGIBLE',
+          message: 'Account cannot reset password in its current status',
+        });
+      }
 
       // 3. SEC-08: Invalidate all active sessions for this user immediately
       await tx.session.updateMany({

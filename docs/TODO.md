@@ -23,7 +23,7 @@ This document is the unified, authoritative remediation master plan for the CSI 
 
 | Phase | Description | Total Tasks | Completed | In Progress | Pending |
 | :--- | :--- | :---: | :---: | :---: | :---: |
-| **Phase 0** | Critical Account & Authentication Blockers | 6 | 5 | 0 | 1 |
+| **Phase 0** | Critical Account & Authentication Blockers | 6 | 6 | 0 | 0 |
 | **Phase 1** | Build Pipeline, Toolchain & Runtime Initialization | 5 | 5 | 0 | 0 |
 | **Phase 2** | Core Domain Logic, Event Capacities & Role Boundaries | 8 | 0 | 0 | 8 |
 | **Phase 3** | Attendance, Offline Sync & Scanner System | 7 | 0 | 0 | 7 |
@@ -34,7 +34,7 @@ This document is the unified, authoritative remediation master plan for the CSI 
 | **Phase 8** | Database, Disaster Recovery, Backup & Archive Safety | 7 | 4 | 1 | 2 |
 | **Phase 9** | API Validation, Error Handling, Client Resilience & E2E | 4 | 0 | 0 | 4 |
 | **Phase 10** | Production Operations, Deployment Recipes & Documentation | 5 | 0 | 0 | 5 |
-| **TOTAL** | **Comprehensive Full-Platform Remediation** | **66** | **15** | **1** | **50** |
+| **TOTAL** | **Comprehensive Full-Platform Remediation** | **66** | **16** | **1** | **49** |
 
 ---
 
@@ -154,10 +154,18 @@ This document is the unified, authoritative remediation master plan for the CSI 
     3. If a mobile/API token flow is required later, implement a separate dedicated endpoint with distinct threat modeling and token lifecycle.
     4. Add test verifying login response contains user details but no token string.
 
-- [ ] **TASK-006 [HIGH] [HR-011 / F34]: Implement Conditionally Atomic Single-Use Token Consumption (Race Guard)**
+- [x] **TASK-006 [HIGH] [HR-011 / F34]: Implement Conditionally Atomic Single-Use Token Consumption (Race Guard)**
   - **Severity:** High (Concurrent Token Reuse / TOCTOU Race Condition)
+  - **Completed:**
+    - Replaced unconditional `.update()` calls with atomic conditional `.updateMany()` queries enforcing `usedAt: null` and `expiresAt: { gt: new Date() }` in both `AuthService.verifyEmail` and `AuthService.resetPassword`.
+    - Added atomic count verification rejecting requests with `INVALID_TOKEN` if `tokenConsumeResult.count === 0`, preventing concurrent token reuse and TOCTOU races under parallel requests.
+    - Guarded `resetPassword` to enforce active status checks and conditionally update password hashes via `tx.user.updateMany({ where: { id, status: ACTIVE } })`.
+    - Added unit test coverage in `auth.service.spec.ts` asserting atomic consumption abort on count 0 and simulating parallel execution races via `Promise.allSettled` (21/21 passing).
+    - Added end-to-end concurrency tests `4d` and `10b` in `tests/e2e/auth.e2e-spec.ts` testing parallel execution against PostgreSQL (15/15 passing).
   - **Affected Files:**
     - `apps/api/src/modules/auth/auth.service.ts` (`verifyEmail`, `resetPassword`)
+    - `tests/unit/api/modules/auth/auth.service.spec.ts`
+    - `tests/e2e/auth.e2e-spec.ts`
   - **Problem:** Verification and password reset read `used_at IS NULL` first and update later without a conditional update check inside the transaction. Two concurrent requests can both pass pre-checks before either transaction commits, allowing concurrent token reuse.
   - **Remediation Plan:**
     1. Execute atomic conditional update: `UPDATE tokens SET used_at = NOW() WHERE id = $1 AND used_at IS NULL AND expires_at > NOW() RETURNING id`.
