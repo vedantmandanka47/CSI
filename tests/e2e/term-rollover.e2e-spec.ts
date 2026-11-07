@@ -425,12 +425,100 @@ describe('Annual Term Rollover & Archival (E2E) (M17)', () => {
       expect(res.body.blockingReasons.length).toBeGreaterThan(0);
       expect(res.body.incomingAppointmentsValidation[0].isValid).toBe(false);
     });
+
+    it('blocks non-admin executive (President) from appointing ADMIN role during preview', async () => {
+      const res = await request(app.getHttpServer())
+        .post('/api/admin/rollover/preview')
+        .set('Cookie', [presidentCookie, csrfCookie])
+        .set('X-CSRF-Token', csrfToken)
+        .send({
+          fromTermId,
+          toTermId,
+          incomingAppointments: [
+            {
+              userId: incomingLeadUserId,
+              roleCode: RoleCode.ADMIN,
+            },
+          ],
+        });
+
+      expect(res.status).toBe(200);
+      expect(res.body.canExecute).toBe(false);
+      expect(res.body.blockingReasons).toContain(
+        'Privilege escalation blocked: only administrators can appoint the ADMIN role',
+      );
+      expect(res.body.incomingAppointmentsValidation[0].isValid).toBe(false);
+      expect(res.body.incomingAppointmentsValidation[0].error).toBe(
+        'Privilege escalation blocked: only administrators can appoint the ADMIN role',
+      );
+    });
   });
 
   // =========================================================================
   // Section 4: Rollover Execution & State Transitions
   // =========================================================================
   describe('Rollover Execution', () => {
+    it('rejects rollover execution when password confirmation is missing with 400 REAUTH_REQUIRED', async () => {
+      const res = await request(app.getHttpServer())
+        .post('/api/admin/rollover/execute')
+        .set('Cookie', [adminCookie, csrfCookie])
+        .set('X-CSRF-Token', csrfToken)
+        .send({
+          fromTermId,
+          toTermId,
+          confirmationCode: 'CONFIRM_ROLLOVER_2027-2028',
+          archiveOpenTasks: true,
+          transitionGraduatingMembers: true,
+          incomingAppointments: [],
+        });
+
+      expect(res.status).toBe(400);
+      expect(res.body.error.code).toBe(ErrorCode.REAUTH_REQUIRED);
+    });
+
+    it('rejects rollover execution when password confirmation is invalid with 401 REAUTH_FAILED', async () => {
+      const res = await request(app.getHttpServer())
+        .post('/api/admin/rollover/execute')
+        .set('Cookie', [adminCookie, csrfCookie])
+        .set('X-CSRF-Token', csrfToken)
+        .send({
+          fromTermId,
+          toTermId,
+          confirmationCode: 'CONFIRM_ROLLOVER_2027-2028',
+          password: 'IncorrectPassword!2026',
+          archiveOpenTasks: true,
+          transitionGraduatingMembers: true,
+          incomingAppointments: [],
+        });
+
+      expect(res.status).toBe(401);
+      expect(res.body.error.code).toBe(ErrorCode.REAUTH_FAILED);
+    });
+
+    it('blocks non-admin executive (President) from appointing ADMIN role with 403 Forbidden (ROLLOVER_UNAUTHORIZED_ROLE_GRANT)', async () => {
+      const res = await request(app.getHttpServer())
+        .post('/api/admin/rollover/execute')
+        .set('Cookie', [presidentCookie, csrfCookie])
+        .set('X-CSRF-Token', csrfToken)
+        .send({
+          fromTermId,
+          toTermId,
+          confirmationCode: 'CONFIRM_ROLLOVER_2027-2028',
+          password: 'M17SecurePass!2026',
+          archiveOpenTasks: true,
+          transitionGraduatingMembers: true,
+          incomingAppointments: [
+            {
+              userId: incomingLeadUserId,
+              roleCode: RoleCode.ADMIN,
+            },
+          ],
+        });
+
+      expect(res.status).toBe(403);
+      expect(res.body.error.code).toBe(ErrorCode.ROLLOVER_UNAUTHORIZED_ROLE_GRANT);
+    });
+
     it('rejects execution when confirmation code is invalid with 400', async () => {
       const res = await request(app.getHttpServer())
         .post('/api/admin/rollover/execute')
@@ -440,6 +528,7 @@ describe('Annual Term Rollover & Archival (E2E) (M17)', () => {
           fromTermId,
           toTermId,
           confirmationCode: 'WRONG_CONFIRMATION_CODE',
+          password: 'M17SecurePass!2026',
           incomingAppointments: [],
         });
 
@@ -456,6 +545,7 @@ describe('Annual Term Rollover & Archival (E2E) (M17)', () => {
           fromTermId,
           toTermId,
           confirmationCode: 'CONFIRM_ROLLOVER_2027-2028',
+          password: 'M17SecurePass!2026',
           archiveOpenTasks: true,
           transitionGraduatingMembers: true,
           notes: 'Annual rollover to seating the 2027-2028 executive team',
@@ -523,6 +613,7 @@ describe('Annual Term Rollover & Archival (E2E) (M17)', () => {
           fromTermId,
           toTermId,
           confirmationCode: 'CONFIRM_ROLLOVER_2027-2028',
+          password: 'M17SecurePass!2026',
           incomingAppointments: [],
         });
 

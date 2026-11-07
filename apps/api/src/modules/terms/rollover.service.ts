@@ -3,6 +3,8 @@ import {
   NotFoundException,
   BadRequestException,
   ConflictException,
+  ForbiddenException,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { PrismaService } from '../../infra/prisma/prisma.service.js';
 import {
@@ -15,8 +17,11 @@ import {
   TermStatus,
   UserStatus,
   RoleCode,
+  PermissionCode,
+  CurrentUser,
   ErrorCode,
 } from '@csi/shared';
+import { verifyPassword } from '../../common/crypto/tokens.js';
 
 @Injectable()
 export class RolloverService {
@@ -27,6 +32,7 @@ export class RolloverService {
    */
   async generatePreview(
     params: RolloverPreviewRequest,
+    caller?: CurrentUser,
   ): Promise<RolloverPreviewResponse> {
     // 1. Resolve Target Term
     const toTerm = await this.prisma.academicTerm.findUnique({
@@ -190,6 +196,13 @@ export class RolloverService {
     const blockingReasons: string[] = [];
     const warnings: string[] = [];
 
+    const callerHasAdminAuthority = caller
+      ? Boolean(
+          caller.roles?.includes(RoleCode.ADMIN) ||
+            caller.permissions?.includes(PermissionCode.ROLE_GRANT_ADMIN),
+        )
+      : false;
+
     const seenAppointments = new Set<string>();
 
     for (const appt of params.incomingAppointments || []) {
@@ -221,6 +234,9 @@ export class RolloverService {
       } else if (!role) {
         isValid = false;
         errorMsg = `Role code "${appt.roleCode}" does not exist`;
+      } else if (appt.roleCode === RoleCode.ADMIN && !callerHasAdminAuthority) {
+        isValid = false;
+        errorMsg = 'Privilege escalation blocked: only administrators can appoint the ADMIN role';
       } else if (appt.committeeCode && !committee) {
         isValid = false;
         errorMsg = `Committee "${appt.committeeCode}" does not exist`;
@@ -304,9 +320,69 @@ export class RolloverService {
    * Execute the annual term rollover transaction
    */
   async executeRollover(
-    actorId: string,
+    actorOrUser: CurrentUser | string,
     params: ExecuteRolloverRequest,
   ): Promise<RolloverExecutionResponse> {
+    const actorId = typeof actorOrUser === 'string' ? actorOrUser : actorOrUser.id;
+
+    // 0. Resolve Actor & Re-authenticate via Password Confirmation
+    const actor = await this.prisma.user.findUnique({
+      where: { id: actorId },
+      include: {
+        roleAssignments: {
+          where: {
+            OR: [{ termEnd: null }, { termEnd: { gt: new Date() } }],
+          },
+          include: { role: true },
+        },
+      },
+    });
+
+    if (!actor) {
+      throw new UnauthorizedException({
+        code: ErrorCode.UNAUTHENTICATED,
+        message: 'Executing actor account was not found',
+      });
+    }
+
+    // Sensitive action re-authentication (Password Confirmation)
+    if (!params.password) {
+      throw new BadRequestException({
+        code: ErrorCode.REAUTH_REQUIRED,
+        message: 'Password confirmation is required to authorize annual rollover execution',
+      });
+    }
+
+    const isPasswordValid = actor.passwordHash
+      ? await verifyPassword(actor.passwordHash, params.password)
+      : false;
+
+    if (!isPasswordValid) {
+      throw new UnauthorizedException({
+        code: ErrorCode.REAUTH_FAILED,
+        message: 'Invalid password confirmation. Rollover execution aborted.',
+      });
+    }
+
+    // Role grant escalation guard (Finding B07 / F55):
+    // Appointing ADMIN requires system administrator authority.
+    const hasAdminAppointment = (params.incomingAppointments || []).some(
+      (appt) => appt.roleCode === RoleCode.ADMIN,
+    );
+
+    const hasAdminAuthority =
+      (typeof actorOrUser !== 'string' &&
+        (actorOrUser.roles?.includes(RoleCode.ADMIN) ||
+          actorOrUser.permissions?.includes(PermissionCode.ROLE_GRANT_ADMIN))) ||
+      actor.roleAssignments.some((ra) => ra.role.code === RoleCode.ADMIN);
+
+    if (hasAdminAppointment && !hasAdminAuthority) {
+      throw new ForbiddenException({
+        code: ErrorCode.ROLLOVER_UNAUTHORIZED_ROLE_GRANT,
+        message: 'Privilege escalation blocked: only system administrators can assign the ADMIN role',
+      });
+    }
+
     // 1. Resolve Target Term
     const toTerm = await this.prisma.academicTerm.findUnique({
       where: { id: params.toTermId },

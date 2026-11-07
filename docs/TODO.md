@@ -25,7 +25,7 @@ This document is the unified, authoritative remediation master plan for the CSI 
 | :--- | :--- | :---: | :---: | :---: | :---: |
 | **Phase 0** | Critical Account & Authentication Blockers | 6 | 6 | 0 | 0 |
 | **Phase 1** | Build Pipeline, Toolchain & Runtime Initialization | 5 | 5 | 0 | 0 |
-| **Phase 2** | Core Domain Logic, Event Capacities & Role Boundaries | 8 | 1 | 0 | 7 |
+| **Phase 2** | Core Domain Logic, Event Capacities & Role Boundaries | 8 | 2 | 0 | 6 |
 | **Phase 3** | Attendance, Offline Sync & Scanner System | 7 | 0 | 0 | 7 |
 | **Phase 4** | Document Engine, Batch Processing & File Storage Durability | 9 | 0 | 0 | 9 |
 | **Phase 5** | Annual Rollover, Checklists, Workspaces & Transactions | 5 | 0 | 0 | 5 |
@@ -34,7 +34,7 @@ This document is the unified, authoritative remediation master plan for the CSI 
 | **Phase 8** | Database, Disaster Recovery, Backup & Archive Safety | 7 | 4 | 1 | 2 |
 | **Phase 9** | API Validation, Error Handling, Client Resilience & E2E | 4 | 0 | 0 | 4 |
 | **Phase 10** | Production Operations, Deployment Recipes & Documentation | 5 | 0 | 0 | 5 |
-| **TOTAL** | **Comprehensive Full-Platform Remediation** | **66** | **17** | **1** | **48** |
+| **TOTAL** | **Comprehensive Full-Platform Remediation** | **66** | **18** | **0** | **48** |
 
 ---
 
@@ -294,7 +294,7 @@ This document is the unified, authoritative remediation master plan for the CSI 
     3. Update `participant-resolver` and `certificate-issuance` services.
     4. Add unit and integration tests issuing certificates to guests against PostgreSQL.
 
-- [ ] **TASK-013 [HIGH] [B07 / F55]: Role Grant Escalation Guard in Annual Rollover (Block Unauthorized ADMIN Assignment)**
+- [x] **TASK-013 [HIGH] [B07 / F55]: Role Grant Escalation Guard in Annual Rollover (Block Unauthorized ADMIN Assignment)**
   - **Severity:** High (Privilege Escalation)
   - **Affected Files:**
     - `packages/shared/src/schemas/rollover.schema.ts`

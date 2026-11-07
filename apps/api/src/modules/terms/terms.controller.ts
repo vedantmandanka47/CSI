@@ -117,7 +117,10 @@ export class TermsController {
   @Post('rollover/preview')
   @HttpCode(HttpStatus.OK)
   @RequirePermission(PermissionCode.ROSTER_MANAGE)
-  async previewRollover(@Body() body: unknown) {
+  async previewRollover(
+    @ReqUser() user: CurrentUser,
+    @Body() body: unknown,
+  ) {
     const parseResult = RolloverPreviewRequestSchema.safeParse(body);
     if (!parseResult.success) {
       throw new BadRequestException({
@@ -127,7 +130,7 @@ export class TermsController {
       });
     }
 
-    return this.rolloverService.generatePreview(parseResult.data);
+    return this.rolloverService.generatePreview(parseResult.data, user);
   }
 
   /**
@@ -148,7 +151,7 @@ export class TermsController {
       });
     }
 
-    return this.rolloverService.executeRollover(user.id, parseResult.data);
+    return this.rolloverService.executeRollover(user, parseResult.data);
   }
 
   /**

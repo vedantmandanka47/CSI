@@ -136,6 +136,7 @@ export const PERMISSION_MATRIX: Readonly<Record<RoleCode, ReadonlySet<Permission
     PermissionCode.DRIVE_TOGGLE,
     PermissionCode.AUDIT_VIEW,
     PermissionCode.SETTINGS_EDIT,
+    PermissionCode.ROLE_GRANT_ADMIN,
   ]),
 };
 

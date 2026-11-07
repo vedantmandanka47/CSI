@@ -69,6 +69,7 @@ export default function AdminTermsPage() {
   const [archiveOpenTasks, setArchiveOpenTasks] = useState(true);
   const [transitionGraduating, setTransitionGraduating] = useState(true);
   const [rolloverNotes, setRolloverNotes] = useState('');
+  const [passwordConfirmation, setPasswordConfirmation] = useState('');
   const [executeLoading, setExecuteLoading] = useState(false);
   const [executionResult, setExecutionResult] = useState<RolloverExecutionResponse | null>(null);
 
@@ -252,6 +253,10 @@ export default function AdminTermsPage() {
       setErrorMessage(`Please type the exact confirmation code: ${rolloverPreview.suggestedConfirmationCode}`);
       return;
     }
+    if (!passwordConfirmation) {
+      setErrorMessage('Please enter your account password to confirm rollover authorization.');
+      return;
+    }
 
     setExecuteLoading(true);
     setErrorMessage(null);
@@ -261,6 +266,7 @@ export default function AdminTermsPage() {
         fromTermId: activeTerm ? activeTerm.id : undefined,
         toTermId: selectedTargetTermId,
         confirmationCode: confirmationCodeInput,
+        password: passwordConfirmation || undefined,
         archiveOpenTasks,
         transitionGraduatingMembers: transitionGraduating,
         notes: rolloverNotes.trim() || undefined,
@@ -273,6 +279,7 @@ export default function AdminTermsPage() {
 
       setExecutionResult(res);
       setRolloverStep(4);
+      setPasswordConfirmation('');
       setSuccessMessage('Annual term rollover executed successfully!');
       void fetchTerms();
     } catch (err: unknown) {
@@ -796,6 +803,11 @@ export default function AdminTermsPage() {
                       <option value={RoleCode.CORE}>Core Lead</option>
                       <option value={RoleCode.SUBCORE}>Subcore Executive</option>
                       <option value={RoleCode.COMMITTEE}>Committee Volunteer</option>
+                      {user &&
+                        (user.roles?.includes(RoleCode.ADMIN) ||
+                          user.permissions?.includes(PermissionCode.ROLE_GRANT_ADMIN)) && (
+                          <option value={RoleCode.ADMIN}>System Administrator</option>
+                        )}
                     </select>
                     <input
                       type="text"
@@ -1037,6 +1049,23 @@ export default function AdminTermsPage() {
                   />
                 </div>
 
+                <div className="rounded-lg border border-border bg-surface-raised p-4">
+                  <label className="block text-xs font-bold text-text">
+                    Confirm Your Account Password:
+                  </label>
+                  <p className="mt-0.5 text-[11px] text-text-muted">
+                    Re-authentication is required to authorize annual rollover execution.
+                  </p>
+                  <input
+                    type="password"
+                    required
+                    placeholder="Enter your account password"
+                    value={passwordConfirmation}
+                    onChange={(e) => setPasswordConfirmation(e.target.value)}
+                    className="mt-2 block w-full rounded-md border border-border px-3 py-2 text-xs text-text shadow-sm focus:border-danger focus:outline-none"
+                  />
+                </div>
+
                 <div className="flex items-center justify-between pt-4">
                   <button
                     type="button"
@@ -1049,7 +1078,9 @@ export default function AdminTermsPage() {
                     type="button"
                     onClick={handleExecuteRollover}
                     disabled={
-                      confirmationCodeInput !== rolloverPreview.suggestedConfirmationCode || executeLoading
+                      confirmationCodeInput !== rolloverPreview.suggestedConfirmationCode ||
+                      !passwordConfirmation ||
+                      executeLoading
                     }
                     className="inline-flex items-center gap-1.5 rounded-md bg-danger px-4 py-2 text-xs font-semibold text-primary-foreground hover:opacity-90 disabled:opacity-50"
                   >

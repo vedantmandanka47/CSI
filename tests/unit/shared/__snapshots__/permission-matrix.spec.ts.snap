@@ -15,6 +15,7 @@ exports[`Permission Matrix (Appendix A) > should match the exact matrix snapshot
     "event.view_own",
     "export.data",
     "public.view",
+    "role.grant_admin",
     "roster.manage",
     "self.dashboard",
     "self.idcard",

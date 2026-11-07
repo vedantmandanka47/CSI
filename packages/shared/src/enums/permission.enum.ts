@@ -19,6 +19,7 @@ export const PermissionCode = {
   DRIVE_TOGGLE: 'drive.toggle',
   AUDIT_VIEW: 'audit.view',
   SETTINGS_EDIT: 'settings.edit',
+  ROLE_GRANT_ADMIN: 'role.grant_admin',
 } as const;
 
 export type PermissionCode = (typeof PermissionCode)[keyof typeof PermissionCode];

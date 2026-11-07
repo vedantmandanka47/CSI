@@ -1,8 +1,22 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { RolloverService } from '../../../../../apps/api/src/modules/terms/rollover.service.js';
 import { PrismaService } from '../../../../../apps/api/src/infra/prisma/prisma.service.js';
-import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
-import { TermStatus, UserStatus, RoleCode } from '@csi/shared';
+import {
+  BadRequestException,
+  ConflictException,
+  NotFoundException,
+  ForbiddenException,
+  UnauthorizedException,
+} from '@nestjs/common';
+import {
+  TermStatus,
+  UserStatus,
+  RoleCode,
+  PermissionCode,
+  CurrentUser,
+  ErrorCode,
+} from '@csi/shared';
+import { hashPassword } from '../../../../../apps/api/src/common/crypto/tokens.js';
 
 describe('RolloverService', () => {
   let service: RolloverService;
@@ -37,6 +51,31 @@ describe('RolloverService', () => {
     updatedAt: new Date(),
   };
 
+  const mockAdminPassword = 'AdminPassword123!';
+  let mockAdminPasswordHash: string;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let mockAdminUser: any;
+
+  beforeAll(async () => {
+    mockAdminPasswordHash = await hashPassword(mockAdminPassword);
+    mockAdminUser = {
+      id: 'admin-uuid',
+      name: 'Admin User',
+      email: 'admin@gcet.edu.in',
+      passwordHash: mockAdminPasswordHash,
+      status: UserStatus.ACTIVE,
+      roleAssignments: [
+        {
+          id: 'ra-admin-1',
+          userId: 'admin-uuid',
+          roleId: 'role-admin',
+          role: { id: 'role-admin', code: RoleCode.ADMIN, name: 'Admin' },
+          termEnd: null,
+        },
+      ],
+    };
+  });
+
   beforeEach(async () => {
     prisma = {
       academicTerm: {
@@ -51,7 +90,10 @@ describe('RolloverService', () => {
         create: jest.fn().mockResolvedValue({ id: 'new-ra-1' }),
       },
       user: {
-        findUnique: jest.fn(),
+        findUnique: jest.fn().mockImplementation(({ where }: { where: { id: string } }) => {
+          if (where.id === 'admin-uuid') return Promise.resolve(mockAdminUser);
+          return Promise.resolve(null);
+        }),
         findMany: jest.fn().mockResolvedValue([]),
         updateMany: jest.fn().mockResolvedValue({ count: 2 }),
         count: jest.fn().mockResolvedValue(10),
@@ -201,9 +243,197 @@ describe('RolloverService', () => {
       expect(preview.blockingReasons.length).toBeGreaterThan(0);
       expect(preview.incomingAppointmentsValidation[1]?.isValid).toBe(false);
     });
+
+    it('blocks non-admin executive from appointing ADMIN role during preview', async () => {
+      prisma.academicTerm.findUnique.mockImplementation(
+        ({ where }: { where: { id: string } }) => {
+          if (where.id === mockToTerm.id) return Promise.resolve(mockToTerm);
+          return Promise.resolve(null);
+        },
+      );
+      prisma.academicTerm.findFirst.mockResolvedValue(mockFromTerm);
+
+      const studentId = '33333333-3333-3333-3333-333333333333';
+      prisma.user.findUnique.mockImplementation(({ where }: { where: { id: string } }) => {
+        if (where.id === studentId) {
+          return Promise.resolve({
+            id: studentId,
+            name: 'Proposed Admin',
+            status: UserStatus.ACTIVE,
+          });
+        }
+        return Promise.resolve(null);
+      });
+      prisma.role.findUnique.mockResolvedValue({
+        id: 'role-admin-id',
+        code: RoleCode.ADMIN,
+        name: 'Administrator',
+      });
+
+      const presidentCaller: CurrentUser = {
+        id: 'pres-uuid',
+        email: 'president@gcet.edu.in',
+        full_name: 'Branch President',
+        status: UserStatus.ACTIVE,
+        roles: [RoleCode.PRESIDENT],
+        permissions: [PermissionCode.ROSTER_MANAGE],
+      };
+
+      const preview = await service.generatePreview(
+        {
+          toTermId: mockToTerm.id,
+          incomingAppointments: [{ userId: studentId, roleCode: RoleCode.ADMIN }],
+          archiveOpenTasks: true,
+          transitionGraduatingMembers: true,
+        },
+        presidentCaller,
+      );
+
+      expect(preview.canExecute).toBe(false);
+      expect(preview.blockingReasons).toContain(
+        'Privilege escalation blocked: only administrators can appoint the ADMIN role',
+      );
+      expect(preview.incomingAppointmentsValidation[0]?.isValid).toBe(false);
+      expect(preview.incomingAppointmentsValidation[0]?.error).toBe(
+        'Privilege escalation blocked: only administrators can appoint the ADMIN role',
+      );
+    });
+
+    it('allows admin caller to appoint ADMIN role during preview', async () => {
+      prisma.academicTerm.findUnique.mockImplementation(
+        ({ where }: { where: { id: string } }) => {
+          if (where.id === mockToTerm.id) return Promise.resolve(mockToTerm);
+          return Promise.resolve(null);
+        },
+      );
+      prisma.academicTerm.findFirst.mockResolvedValue(mockFromTerm);
+
+      const studentId = '33333333-3333-3333-3333-333333333333';
+      prisma.user.findUnique.mockImplementation(({ where }: { where: { id: string } }) => {
+        if (where.id === studentId) {
+          return Promise.resolve({
+            id: studentId,
+            name: 'Proposed Admin',
+            status: UserStatus.ACTIVE,
+          });
+        }
+        return Promise.resolve(null);
+      });
+      prisma.role.findUnique.mockResolvedValue({
+        id: 'role-admin-id',
+        code: RoleCode.ADMIN,
+        name: 'Administrator',
+      });
+
+      const adminCaller: CurrentUser = {
+        id: 'admin-uuid',
+        email: 'admin@gcet.edu.in',
+        full_name: 'System Administrator',
+        status: UserStatus.ACTIVE,
+        roles: [RoleCode.ADMIN],
+        permissions: [PermissionCode.ROLE_GRANT_ADMIN],
+      };
+
+      const preview = await service.generatePreview(
+        {
+          toTermId: mockToTerm.id,
+          incomingAppointments: [{ userId: studentId, roleCode: RoleCode.ADMIN }],
+          archiveOpenTasks: true,
+          transitionGraduatingMembers: true,
+        },
+        adminCaller,
+      );
+
+      expect(preview.canExecute).toBe(true);
+      expect(preview.blockingReasons).toHaveLength(0);
+      expect(preview.incomingAppointmentsValidation[0]?.isValid).toBe(true);
+    });
   });
 
   describe('executeRollover', () => {
+    it('rejects execution when password confirmation is missing (REAUTH_REQUIRED)', async () => {
+      try {
+        await service.executeRollover('admin-uuid', {
+          toTermId: mockToTerm.id,
+          confirmationCode: 'CONFIRM_ROLLOVER_2026-2027',
+          archiveOpenTasks: true,
+          transitionGraduatingMembers: true,
+          incomingAppointments: [],
+        });
+        fail('Should have thrown BadRequestException');
+      } catch (err: unknown) {
+        expect(err).toBeInstanceOf(BadRequestException);
+        expect((err as BadRequestException).getResponse()).toMatchObject({
+          code: ErrorCode.REAUTH_REQUIRED,
+        });
+      }
+    });
+
+    it('rejects execution when password confirmation is invalid (REAUTH_FAILED)', async () => {
+      try {
+        await service.executeRollover('admin-uuid', {
+          toTermId: mockToTerm.id,
+          confirmationCode: 'CONFIRM_ROLLOVER_2026-2027',
+          password: 'WrongPassword123!',
+          archiveOpenTasks: true,
+          transitionGraduatingMembers: true,
+          incomingAppointments: [],
+        });
+        fail('Should have thrown UnauthorizedException');
+      } catch (err: unknown) {
+        expect(err).toBeInstanceOf(UnauthorizedException);
+        expect((err as UnauthorizedException).getResponse()).toMatchObject({
+          code: ErrorCode.REAUTH_FAILED,
+        });
+      }
+    });
+
+    it('blocks non-admin executive from appointing ADMIN role (ROLLOVER_UNAUTHORIZED_ROLE_GRANT)', async () => {
+      const presUser = {
+        id: 'pres-uuid',
+        name: 'President User',
+        email: 'pres@gcet.edu.in',
+        passwordHash: mockAdminPasswordHash,
+        status: UserStatus.ACTIVE,
+        roleAssignments: [
+          {
+            id: 'ra-pres-1',
+            userId: 'pres-uuid',
+            roleId: 'role-pres-id',
+            role: { id: 'role-pres-id', code: RoleCode.PRESIDENT, name: 'President' },
+            termEnd: null,
+          },
+        ],
+      };
+
+      prisma.user.findUnique.mockImplementation(({ where }: { where: { id: string } }) => {
+        if (where.id === 'pres-uuid') return Promise.resolve(presUser);
+        return Promise.resolve(null);
+      });
+
+      try {
+        await service.executeRollover('pres-uuid', {
+          toTermId: mockToTerm.id,
+          confirmationCode: 'CONFIRM_ROLLOVER_2026-2027',
+          password: mockAdminPassword,
+          archiveOpenTasks: true,
+          transitionGraduatingMembers: true,
+          incomingAppointments: [
+            {
+              userId: '44444444-4444-4444-4444-444444444444',
+              roleCode: RoleCode.ADMIN,
+            },
+          ],
+        });
+        fail('Should have thrown ForbiddenException');
+      } catch (err: unknown) {
+        expect(err).toBeInstanceOf(ForbiddenException);
+        expect((err as ForbiddenException).getResponse()).toMatchObject({
+          code: ErrorCode.ROLLOVER_UNAUTHORIZED_ROLE_GRANT,
+        });
+      }
+    });
+
     it('rejects execution when confirmation code is invalid', async () => {
       prisma.academicTerm.findUnique.mockResolvedValue(mockToTerm);
 
@@ -211,6 +441,7 @@ describe('RolloverService', () => {
         service.executeRollover('admin-uuid', {
           toTermId: mockToTerm.id,
           confirmationCode: 'BAD_CODE',
+          password: mockAdminPassword,
           archiveOpenTasks: true,
           transitionGraduatingMembers: true,
           incomingAppointments: [],
@@ -228,10 +459,16 @@ describe('RolloverService', () => {
       prisma.academicTerm.findFirst.mockResolvedValue(mockFromTerm);
 
       const studentId = '22222222-2222-2222-2222-222222222222';
-      prisma.user.findUnique.mockResolvedValue({
-        id: studentId,
-        name: 'Incoming President',
-        status: UserStatus.ACTIVE,
+      prisma.user.findUnique.mockImplementation(({ where }: { where: { id: string } }) => {
+        if (where.id === 'admin-uuid') return Promise.resolve(mockAdminUser);
+        if (where.id === studentId) {
+          return Promise.resolve({
+            id: studentId,
+            name: 'Incoming President',
+            status: UserStatus.ACTIVE,
+          });
+        }
+        return Promise.resolve(null);
       });
       prisma.role.findUnique.mockResolvedValue({
         id: 'role-pres-id',
@@ -243,6 +480,7 @@ describe('RolloverService', () => {
         fromTermId: mockFromTerm.id,
         toTermId: mockToTerm.id,
         confirmationCode: 'CONFIRM_ROLLOVER_2026-2027',
+        password: mockAdminPassword,
         archiveOpenTasks: true,
         transitionGraduatingMembers: true,
         notes: 'Annual rollover executed for academic year 2026-2027',
@@ -283,6 +521,7 @@ describe('RolloverService', () => {
         service.executeRollover('admin-uuid', {
           toTermId: mockToTerm.id,
           confirmationCode: 'CONFIRM_ROLLOVER_2026-2027',
+          password: mockAdminPassword,
           archiveOpenTasks: true,
           transitionGraduatingMembers: true,
           incomingAppointments: [],
@@ -304,6 +543,7 @@ describe('RolloverService', () => {
           fromTermId: mockFromTerm.id,
           toTermId: mockToTerm.id,
           confirmationCode: 'CONFIRM_ROLLOVER_2026-2027',
+          password: mockAdminPassword,
           archiveOpenTasks: true,
           transitionGraduatingMembers: true,
           incomingAppointments: [],

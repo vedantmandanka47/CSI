@@ -105,6 +105,16 @@ describe('Permission Matrix (Appendix A)', () => {
     }
   });
 
+  it('should grant ROLE_GRANT_ADMIN exclusively to ADMIN', () => {
+    expect(roleHasPermission(RoleCode.ADMIN, PermissionCode.ROLE_GRANT_ADMIN)).toBe(true);
+    expect(roleHasPermission(RoleCode.PRESIDENT, PermissionCode.ROLE_GRANT_ADMIN)).toBe(false);
+    expect(roleHasPermission(RoleCode.VP, PermissionCode.ROLE_GRANT_ADMIN)).toBe(false);
+    expect(roleHasPermission(RoleCode.CORE, PermissionCode.ROLE_GRANT_ADMIN)).toBe(false);
+    expect(roleHasPermission(RoleCode.SUBCORE, PermissionCode.ROLE_GRANT_ADMIN)).toBe(false);
+    expect(roleHasPermission(RoleCode.COMMITTEE, PermissionCode.ROLE_GRANT_ADMIN)).toBe(false);
+    expect(roleHasPermission(RoleCode.MEMBER, PermissionCode.ROLE_GRANT_ADMIN)).toBe(false);
+  });
+
   it('should compute effective permissions union across multiple roles', () => {
     const roles = [RoleCode.MEMBER, RoleCode.COMMITTEE];
     const effective = computeEffectivePermissions(roles);

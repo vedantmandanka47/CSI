@@ -110,6 +110,10 @@ export const ExecuteRolloverRequestSchema = z.object({
   transitionGraduatingMembers: z.boolean().default(true),
   notes: z.string().max(1000).optional().nullable(),
   confirmationCode: z.string().min(1, 'Confirmation code is required'),
+  password: z
+    .string()
+    .min(1, 'Password confirmation is required for sensitive rollover execution')
+    .optional(),
 });
 
 export type ExecuteRolloverRequest = z.infer<typeof ExecuteRolloverRequestSchema>;
