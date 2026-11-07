@@ -203,6 +203,9 @@ describe('Auth & Session Subsystem (E2E) (ARCH-05, ARCH-14, SEC-04, SEC-05, SEC-
     expect(res.body.user).toBeDefined();
     expect(res.body.user.email).toBe(testEmail);
     expect(res.body.user.roles).toContain('member');
+    // TASK-005 / B08 / HR-007: Bearer sessionToken must NEVER be returned in login response body
+    expect(res.body.sessionToken).toBeUndefined();
+    expect(res.body).not.toHaveProperty('sessionToken');
 
     const rawCookies = res.headers['set-cookie'];
     const cookies = Array.isArray(rawCookies) ? rawCookies : rawCookies ? [rawCookies] : [];

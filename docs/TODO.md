@@ -23,7 +23,7 @@ This document is the unified, authoritative remediation master plan for the CSI 
 
 | Phase | Description | Total Tasks | Completed | In Progress | Pending |
 | :--- | :--- | :---: | :---: | :---: | :---: |
-| **Phase 0** | Critical Account & Authentication Blockers | 6 | 4 | 0 | 2 |
+| **Phase 0** | Critical Account & Authentication Blockers | 6 | 5 | 0 | 1 |
 | **Phase 1** | Build Pipeline, Toolchain & Runtime Initialization | 5 | 5 | 0 | 0 |
 | **Phase 2** | Core Domain Logic, Event Capacities & Role Boundaries | 8 | 0 | 0 | 8 |
 | **Phase 3** | Attendance, Offline Sync & Scanner System | 7 | 0 | 0 | 7 |
@@ -34,7 +34,7 @@ This document is the unified, authoritative remediation master plan for the CSI 
 | **Phase 8** | Database, Disaster Recovery, Backup & Archive Safety | 7 | 4 | 1 | 2 |
 | **Phase 9** | API Validation, Error Handling, Client Resilience & E2E | 4 | 0 | 0 | 4 |
 | **Phase 10** | Production Operations, Deployment Recipes & Documentation | 5 | 0 | 0 | 5 |
-| **TOTAL** | **Comprehensive Full-Platform Remediation** | **66** | **14** | **1** | **51** |
+| **TOTAL** | **Comprehensive Full-Platform Remediation** | **66** | **15** | **1** | **50** |
 
 ---
 
@@ -135,11 +135,18 @@ This document is the unified, authoritative remediation master plan for the CSI 
     2. When an admin rejects or deactivates an account, immediately revoke/delete all outstanding verification and reset tokens for that user.
     3. Add tests verifying rejected or suspended accounts fail email verification.
 
-- [ ] **TASK-005 [HIGH] [B08 / HR-007]: Remove Raw Bearer Session Token from Login JSON Response Body**
+- [x] **TASK-005 [HIGH] [B08 / HR-007]: Remove Raw Bearer Session Token from Login JSON Response Body**
   - **Severity:** High (Credential Exposure / Defense-in-Depth Breakdown)
+  - **Completed:**
+    - Stripped raw `sessionToken` from `AuthController.login()` JSON response envelope.
+    - Preserved `HttpOnly`, `SameSite: Lax`, and `Secure` cookie session issuance via `res.cookie('csi_session', ...)`.
+    - Verified `apps/web/src/components/auth-context.tsx` and `apps/web/src/lib/api-client.ts` operate strictly on browser cookie handling without relying on bearer tokens.
+    - Added comprehensive unit test suite in `tests/unit/api/modules/auth/auth.controller.spec.ts` asserting negative exposure of `sessionToken` in the response body.
+    - Added E2E assertions in `tests/e2e/auth.e2e-spec.ts` verifying `sessionToken` is undefined in the login response body.
   - **Affected Files:**
     - `apps/api/src/modules/auth/auth.controller.ts` (`login`)
-    - `apps/web/src/lib/api-client.ts`
+    - `tests/unit/api/modules/auth/auth.controller.spec.ts` (new)
+    - `tests/e2e/auth.e2e-spec.ts`
   - **Problem:** The login controller sets an `HttpOnly` cookie and simultaneously returns the raw `sessionToken` in the JSON response body ("for programmatic/mobile clients"). Any XSS, rogue browser extension, or client log can steal the session token that `HttpOnly` was specifically intended to protect.
   - **Remediation Plan:**
     1. Remove `sessionToken` from browser login response body.

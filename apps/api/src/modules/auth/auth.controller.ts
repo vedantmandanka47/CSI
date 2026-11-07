@@ -153,7 +153,6 @@ export class AuthController {
     return {
       message: 'Login successful',
       user: authResult.user,
-      sessionToken: authResult.sessionToken, // Also return in response body for programmatic/mobile clients
     };
   }
 
