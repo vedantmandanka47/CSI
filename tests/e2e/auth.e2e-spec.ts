@@ -141,6 +141,56 @@ describe('Auth & Session Subsystem (E2E) (ARCH-05, ARCH-14, SEC-04, SEC-05, SEC-
     expect(user?.status).toBe('active');
   });
 
+  it('4b. POST /api/auth/verify-email rejects re-verification for already active or deactivated account (TASK-004)', async () => {
+    // Attempting to re-verify an already active user fails fail-closed
+    const res = await request(app.getHttpServer())
+      .post('/api/auth/verify-email')
+      .send({ token: verificationToken })
+      .expect(400);
+
+    expect(res.body.error).toBeDefined();
+    expect(res.body.error.code).toBe('INVALID_TOKEN'); // Already consumed
+  });
+
+  it('4c. POST /api/auth/verify-email rejects verification if account was deactivated or rejected (TASK-004)', async () => {
+    // Create an unconsumed verification token for an inactive user
+    const deactivatedEmail = 'deactivated.student@gcet.ac.in';
+    const rawToken = 'test-unconsumed-deactivated-token-123456';
+    const tokenHashStr = hashToken(rawToken);
+
+    const deactUser = await prisma.user.create({
+      data: {
+        email: deactivatedEmail,
+        name: 'Deactivated Student',
+        status: 'inactive',
+        passwordHash: '$argon2id$placeholder',
+      },
+    });
+
+    await prisma.verificationToken.create({
+      data: {
+        userId: deactUser.id,
+        tokenHash: tokenHashStr,
+        expiresAt: new Date(Date.now() + 3600000),
+      },
+    });
+
+    const res = await request(app.getHttpServer())
+      .post('/api/auth/verify-email')
+      .send({ token: rawToken })
+      .expect(400);
+
+    expect(res.body.error.code).toBe('ACCOUNT_NOT_ELIGIBLE');
+
+    // Confirm user is STILL inactive and was NOT re-activated!
+    const recheck = await prisma.user.findUnique({ where: { id: deactUser.id } });
+    expect(recheck?.status).toBe('inactive');
+
+    // Clean up
+    await prisma.verificationToken.deleteMany({ where: { userId: deactUser.id } });
+    await prisma.user.delete({ where: { id: deactUser.id } });
+  });
+
   it('5. POST /api/auth/login authenticates with Argon2id and sets HttpOnly csi_session cookie', async () => {
     const res = await request(app.getHttpServer())
       .post('/api/auth/login')

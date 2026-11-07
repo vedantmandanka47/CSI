@@ -127,6 +127,9 @@ export class AuthService {
 
   /**
    * Email Verification
+   * Validates single-use token, ensures the account is strictly in PENDING state,
+   * atomically transitions account from PENDING to ACTIVE, and marks token as used.
+   * Prevents re-activation of rejected or deactivated accounts (TASK-004 / B04 / F03).
    */
   async verifyEmail(token: string, ip?: string): Promise<{ message: string }> {
     const tokenHash = hashToken(token);
@@ -143,17 +146,37 @@ export class AuthService {
       });
     }
 
+    if (!verification.user || verification.user.status !== UserStatus.PENDING) {
+      throw new BadRequestException({
+        code: 'ACCOUNT_NOT_ELIGIBLE',
+        message: 'Account cannot be verified in its current status',
+      });
+    }
+
     await this.prisma.$transaction(async (tx) => {
+      // 1. Mark token as consumed
       await tx.verificationToken.update({
         where: { id: verification.id },
         data: { usedAt: new Date() },
       });
 
-      await tx.user.update({
-        where: { id: verification.userId },
+      // 2. Conditionally update user status: ONLY allow transition from PENDING -> ACTIVE (TASK-004)
+      const updateResult = await tx.user.updateMany({
+        where: {
+          id: verification.userId,
+          status: UserStatus.PENDING,
+        },
         data: { status: UserStatus.ACTIVE },
       });
 
+      if (updateResult.count === 0) {
+        throw new BadRequestException({
+          code: 'ACCOUNT_NOT_ELIGIBLE',
+          message: 'Account cannot be verified in its current status',
+        });
+      }
+
+      // 3. Immutable audit trail
       await tx.auditLog.create({
         data: {
           actorId: verification.userId,

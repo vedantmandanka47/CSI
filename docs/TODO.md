@@ -23,7 +23,7 @@ This document is the unified, authoritative remediation master plan for the CSI 
 
 | Phase | Description | Total Tasks | Completed | In Progress | Pending |
 | :--- | :--- | :---: | :---: | :---: | :---: |
-| **Phase 0** | Critical Account & Authentication Blockers | 6 | 3 | 0 | 3 |
+| **Phase 0** | Critical Account & Authentication Blockers | 6 | 4 | 0 | 2 |
 | **Phase 1** | Build Pipeline, Toolchain & Runtime Initialization | 5 | 5 | 0 | 0 |
 | **Phase 2** | Core Domain Logic, Event Capacities & Role Boundaries | 8 | 0 | 0 | 8 |
 | **Phase 3** | Attendance, Offline Sync & Scanner System | 7 | 0 | 0 | 7 |
@@ -34,7 +34,7 @@ This document is the unified, authoritative remediation master plan for the CSI 
 | **Phase 8** | Database, Disaster Recovery, Backup & Archive Safety | 7 | 4 | 1 | 2 |
 | **Phase 9** | API Validation, Error Handling, Client Resilience & E2E | 4 | 0 | 0 | 4 |
 | **Phase 10** | Production Operations, Deployment Recipes & Documentation | 5 | 0 | 0 | 5 |
-| **TOTAL** | **Comprehensive Full-Platform Remediation** | **66** | **13** | **1** | **52** |
+| **TOTAL** | **Comprehensive Full-Platform Remediation** | **66** | **14** | **1** | **51** |
 
 ---
 
@@ -112,11 +112,23 @@ This document is the unified, authoritative remediation master plan for the CSI 
     4. Separate `emailVerifiedAt` timestamp from executive membership approval (`membership_status`).
     5. Add unit and mock integration tests for email delivery failure and retry logic.
 
-- [ ] **TASK-004 [HIGH] [B04 / F03]: Prevent Re-activation of Deactivated/Rejected Accounts via Verification Tokens**
+- [x] **TASK-004 [HIGH] [B04 / F03]: Prevent Re-activation of Deactivated/Rejected Accounts via Verification Tokens**
   - **Severity:** High (Administrative State Inversion)
+  - **Completed:**
+    - Hardened `AuthService.verifyEmail()` with an atomic conditional state gate requiring `user.status === UserStatus.PENDING`.
+    - Executed conditional database mutation (`updateMany({ where: { id, status: PENDING }, data: { status: ACTIVE } })`) preventing race conditions or status overwriting on active/deactivated accounts.
+    - Updated `MemberAdminService.rejectApplication()` to automatically revoke all outstanding verification tokens, password reset tokens, and active sessions upon application rejection.
+    - Updated `UsersService.updateStatus()` to automatically purge outstanding verification tokens, reset tokens, and sessions whenever an account is transitioned to `INACTIVE` or `GRADUATED`.
+    - Added unit tests in `auth.service.spec.ts` (asserting rejected/inactive/active/race states fail with `ACCOUNT_NOT_ELIGIBLE`), `member-admin.service.spec.ts`, and `users.service.spec.ts`.
+    - Added integration assertions in `tests/e2e/auth.e2e-spec.ts` confirming inactive and rejected accounts cannot activate via old tokens (13/13 passing).
   - **Affected Files:**
     - `apps/api/src/modules/auth/auth.service.ts` (`verifyEmail`)
-    - `apps/api/src/modules/admin/members/member-admin.service.ts` (`rejectApplication`, `deactivateMember`)
+    - `apps/api/src/modules/admin/members/member-admin.service.ts` (`rejectApplication`)
+    - `apps/api/src/modules/users/users.service.ts` (`updateStatus`)
+    - `tests/unit/api/modules/auth/auth.service.spec.ts`
+    - `tests/unit/api/modules/admin/member-admin.service.spec.ts`
+    - `tests/unit/api/modules/users/users.service.spec.ts`
+    - `tests/e2e/auth.e2e-spec.ts`
   - **Problem:** `verifyEmail()` unconditionally sets `status = ACTIVE` if the token is valid, without checking the user's current status. If an executive rejects or deactivates an applicant, the applicant can use their still-valid signup token to become active again.
   - **Remediation Plan:**
     1. Update `verifyEmail` to use an atomic conditional update allowing transition only from `PENDING` to `ACTIVE`.

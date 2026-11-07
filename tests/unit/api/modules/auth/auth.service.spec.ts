@@ -26,6 +26,7 @@ describe('AuthService (Phase 1 M3)', () => {
       findFirst: jest.Mock;
       create: jest.Mock;
       update: jest.Mock;
+      updateMany: jest.Mock;
     };
     role: {
       findUnique: jest.Mock;
@@ -62,6 +63,7 @@ describe('AuthService (Phase 1 M3)', () => {
         findFirst: jest.fn(),
         create: jest.fn(),
         update: jest.fn(),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
       role: {
         findUnique: jest.fn(),
@@ -194,24 +196,83 @@ describe('AuthService (Phase 1 M3)', () => {
       await expect(service.verifyEmail('invalid-token')).rejects.toThrow(BadRequestException);
     });
 
-    it('activates user, consumes token, and writes audit log on valid token', async () => {
+    it('activates user, consumes token, and writes audit log on valid token for pending user', async () => {
       mockPrisma.verificationToken.findUnique.mockResolvedValue({
         id: 'vt-1',
         userId: 'u1',
         usedAt: null,
         expiresAt: new Date(Date.now() + 100000),
+        user: { id: 'u1', status: UserStatus.PENDING },
       });
+      mockPrisma.user.updateMany.mockResolvedValue({ count: 1 });
 
       const res = await service.verifyEmail('valid-token');
       expect(res.message).toContain('successfully verified');
       expect(mockPrisma.verificationToken.update).toHaveBeenCalled();
-      expect(mockPrisma.user.update).toHaveBeenCalledWith({
-        where: { id: 'u1' },
+      expect(mockPrisma.user.updateMany).toHaveBeenCalledWith({
+        where: { id: 'u1', status: UserStatus.PENDING },
         data: { status: UserStatus.ACTIVE },
       });
       expect(mockPrisma.auditLog.create).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({ action: 'AUTH_EMAIL_VERIFIED' }),
+        }),
+      );
+    });
+
+    it('rejects verification if user account is deactivated or rejected (TASK-004 / B04 / F03)', async () => {
+      mockPrisma.verificationToken.findUnique.mockResolvedValue({
+        id: 'vt-inactive',
+        userId: 'u-inactive',
+        usedAt: null,
+        expiresAt: new Date(Date.now() + 100000),
+        user: { id: 'u-inactive', status: UserStatus.INACTIVE },
+      });
+
+      await expect(service.verifyEmail('token-for-inactive')).rejects.toThrow(
+        expect.objectContaining({
+          response: expect.objectContaining({
+            code: 'ACCOUNT_NOT_ELIGIBLE',
+          }),
+        }),
+      );
+      expect(mockPrisma.user.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('rejects verification if user account is already active (TASK-004)', async () => {
+      mockPrisma.verificationToken.findUnique.mockResolvedValue({
+        id: 'vt-active',
+        userId: 'u-active',
+        usedAt: null,
+        expiresAt: new Date(Date.now() + 100000),
+        user: { id: 'u-active', status: UserStatus.ACTIVE },
+      });
+
+      await expect(service.verifyEmail('token-for-active')).rejects.toThrow(
+        expect.objectContaining({
+          response: expect.objectContaining({
+            code: 'ACCOUNT_NOT_ELIGIBLE',
+          }),
+        }),
+      );
+      expect(mockPrisma.user.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('aborts transaction if concurrent update fails to find PENDING user (atomic guard)', async () => {
+      mockPrisma.verificationToken.findUnique.mockResolvedValue({
+        id: 'vt-race',
+        userId: 'u-race',
+        usedAt: null,
+        expiresAt: new Date(Date.now() + 100000),
+        user: { id: 'u-race', status: UserStatus.PENDING },
+      });
+      mockPrisma.user.updateMany.mockResolvedValue({ count: 0 });
+
+      await expect(service.verifyEmail('token-for-race')).rejects.toThrow(
+        expect.objectContaining({
+          response: expect.objectContaining({
+            code: 'ACCOUNT_NOT_ELIGIBLE',
+          }),
         }),
       );
     });

@@ -26,6 +26,15 @@ describe('MemberAdminService (M8)', () => {
     auditLog: {
       create: jest.Mock;
     };
+    verificationToken: {
+      deleteMany: jest.Mock;
+    };
+    passwordResetToken: {
+      deleteMany: jest.Mock;
+    };
+    session: {
+      deleteMany: jest.Mock;
+    };
     $transaction: jest.Mock;
   };
 
@@ -49,6 +58,15 @@ describe('MemberAdminService (M8)', () => {
       },
       auditLog: {
         create: jest.fn(),
+      },
+      verificationToken: {
+        deleteMany: jest.fn().mockResolvedValue({ count: 1 }),
+      },
+      passwordResetToken: {
+        deleteMany: jest.fn().mockResolvedValue({ count: 1 }),
+      },
+      session: {
+        deleteMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
       $transaction: jest.fn(async (cb: (tx: unknown) => Promise<unknown>) => cb(mockPrisma)),
     };
@@ -218,6 +236,15 @@ describe('MemberAdminService (M8)', () => {
       expect(mockPrisma.user.update).toHaveBeenCalledWith({
         where: { id: 'user-1' },
         data: { status: UserStatus.INACTIVE },
+      });
+      expect(mockPrisma.verificationToken.deleteMany).toHaveBeenCalledWith({
+        where: { userId: 'user-1' },
+      });
+      expect(mockPrisma.passwordResetToken.deleteMany).toHaveBeenCalledWith({
+        where: { userId: 'user-1' },
+      });
+      expect(mockPrisma.session.deleteMany).toHaveBeenCalledWith({
+        where: { userId: 'user-1' },
       });
       expect(mockPrisma.auditLog.create).toHaveBeenCalledWith(
         expect.objectContaining({

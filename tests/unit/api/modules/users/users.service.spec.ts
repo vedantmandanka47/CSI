@@ -16,6 +16,15 @@ describe('UsersService', () => {
     auditLog: {
       create: jest.Mock;
     };
+    verificationToken: {
+      deleteMany: jest.Mock;
+    };
+    passwordResetToken: {
+      deleteMany: jest.Mock;
+    };
+    session: {
+      deleteMany: jest.Mock;
+    };
     $transaction: jest.Mock;
   };
 
@@ -64,6 +73,15 @@ describe('UsersService', () => {
       auditLog: {
         create: jest.fn().mockResolvedValue({ id: 'a1' }),
       },
+      verificationToken: {
+        deleteMany: jest.fn().mockResolvedValue({ count: 1 }),
+      },
+      passwordResetToken: {
+        deleteMany: jest.fn().mockResolvedValue({ count: 1 }),
+      },
+      session: {
+        deleteMany: jest.fn().mockResolvedValue({ count: 1 }),
+      },
       $transaction: jest.fn().mockImplementation(async (callback) => {
         return callback(mockPrisma);
       }),
@@ -103,10 +121,19 @@ describe('UsersService', () => {
     await expect(service.findById('nonexistent')).rejects.toThrow(NotFoundException);
   });
 
-  it('updateStatus updates user and writes immutable audit log entry in transaction', async () => {
+  it('updateStatus updates user, writes audit log, and revokes tokens/sessions on deactivation', async () => {
     const updated = await service.updateStatus('u1', UserStatus.INACTIVE, 'admin-1', 'Term ended');
 
     expect(mockPrisma.$transaction).toHaveBeenCalled();
+    expect(mockPrisma.verificationToken.deleteMany).toHaveBeenCalledWith({
+      where: { userId: 'u1' },
+    });
+    expect(mockPrisma.passwordResetToken.deleteMany).toHaveBeenCalledWith({
+      where: { userId: 'u1' },
+    });
+    expect(mockPrisma.session.deleteMany).toHaveBeenCalledWith({
+      where: { userId: 'u1' },
+    });
     expect(mockPrisma.auditLog.create).toHaveBeenCalledWith({
       data: {
         actorId: 'admin-1',

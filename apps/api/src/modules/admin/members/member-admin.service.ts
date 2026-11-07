@@ -218,6 +218,17 @@ export class MemberAdminService {
         data: { status: UserStatus.INACTIVE },
       });
 
+      // TASK-004 / B04 / F03: Immediately revoke all outstanding verification tokens, reset tokens, and active sessions
+      await tx.verificationToken.deleteMany({
+        where: { userId },
+      });
+      await tx.passwordResetToken.deleteMany({
+        where: { userId },
+      });
+      await tx.session.deleteMany({
+        where: { userId },
+      });
+
       await tx.auditLog.create({
         data: {
           actorId,

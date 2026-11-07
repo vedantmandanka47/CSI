@@ -238,6 +238,19 @@ export class UsersService {
         data: { status },
       });
 
+      // TASK-004 / B04 / F03: Revoke all outstanding tokens and active sessions if deactivated or graduated
+      if (status === UserStatus.INACTIVE || status === UserStatus.GRADUATED) {
+        await tx.verificationToken.deleteMany({
+          where: { userId: id },
+        });
+        await tx.passwordResetToken.deleteMany({
+          where: { userId: id },
+        });
+        await tx.session.deleteMany({
+          where: { userId: id },
+        });
+      }
+
       // Write immutable audit log entry
       await tx.auditLog.create({
         data: {
