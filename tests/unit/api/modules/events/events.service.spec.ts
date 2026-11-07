@@ -2,7 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { NotFoundException, ConflictException, BadRequestException } from '@nestjs/common';
 import { EventsService } from '../../../../../apps/api/src/modules/events/events.service.js';
 import { PrismaService } from '../../../../../apps/api/src/infra/prisma/prisma.service.js';
-import { EventState, RegistrationStatus, EventCategory, ErrorCode, SEAT_CONSUMING_STATUSES } from '@csi/shared';
+import { EventState, RegistrationStatus, EventCategory, ErrorCode, SEAT_CONSUMING_STATUSES, GuestRegisterInput } from '@csi/shared';
 
 interface MockPrisma {
   event: {
@@ -287,6 +287,274 @@ describe('EventsService', () => {
 
       expect(response.status).toBe(RegistrationStatus.WAITLISTED);
       expect(response.message).toContain('placed on the waitlist');
+    });
+  });
+
+  describe('registerGuest', () => {
+    const validGuestInput: GuestRegisterInput = {
+      name: 'Alice Guest',
+      email: 'alice.guest@example.com',
+      college: 'GCET',
+      phone: '+919876543210',
+      consent_data_processing: true,
+    };
+
+    it('registers guest successfully when capacity is available and within active window', async () => {
+      mockPrisma.$queryRaw.mockResolvedValueOnce([
+        {
+          id: sampleEvent.id,
+          capacity: 5,
+          state: EventState.PUBLISHED,
+          registration_opens_at: new Date(Date.now() - 3600000),
+          registration_closes_at: new Date(Date.now() + 3600000),
+          starts_at: new Date(Date.now() + 7200000),
+          ends_at: new Date(Date.now() + 10800000),
+        },
+      ]);
+      mockPrisma.eventGuest.findUnique.mockResolvedValueOnce(null);
+      mockPrisma.registration.count.mockResolvedValueOnce(1);
+      mockPrisma.eventGuest.count.mockResolvedValueOnce(1);
+      mockPrisma.eventGuest.create.mockResolvedValueOnce({
+        id: 'guest-new-1',
+        createdAt: new Date(),
+      });
+
+      const response = await service.registerGuest(sampleEvent.id, validGuestInput, '127.0.0.1');
+
+      expect(response.status).toBe(RegistrationStatus.REGISTERED);
+      expect(response.message).toContain('confirmed successfully');
+      expect(mockPrisma.auditLog.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ action: 'GUEST_EVENT_REGISTER' }),
+        }),
+      );
+    });
+
+    it('places guest on waitlist when event is at capacity', async () => {
+      mockPrisma.$queryRaw.mockResolvedValueOnce([
+        {
+          id: sampleEvent.id,
+          capacity: 2,
+          state: EventState.PUBLISHED,
+          registration_opens_at: null,
+          registration_closes_at: null,
+          starts_at: new Date(Date.now() + 7200000),
+          ends_at: new Date(Date.now() + 10800000),
+        },
+      ]);
+      mockPrisma.eventGuest.findUnique.mockResolvedValueOnce(null);
+      mockPrisma.registration.count.mockResolvedValueOnce(1);
+      mockPrisma.eventGuest.count.mockResolvedValueOnce(1);
+      mockPrisma.eventGuest.create.mockResolvedValueOnce({
+        id: 'guest-waitlist-1',
+        createdAt: new Date(),
+      });
+
+      const response = await service.registerGuest(sampleEvent.id, validGuestInput);
+
+      expect(response.status).toBe(RegistrationStatus.WAITLISTED);
+      expect(response.message).toContain('placed on the guest waitlist');
+      expect(mockPrisma.auditLog.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ action: 'GUEST_EVENT_WAITLIST' }),
+        }),
+      );
+    });
+
+    it('rejects guest registration when event is in terminal state COMPLETED (B18 / F11)', async () => {
+      mockPrisma.$queryRaw.mockResolvedValueOnce([
+        {
+          id: sampleEvent.id,
+          capacity: 5,
+          state: EventState.COMPLETED,
+          registration_opens_at: null,
+          registration_closes_at: null,
+          starts_at: new Date(Date.now() - 7200000),
+          ends_at: new Date(Date.now() - 3600000),
+        },
+      ]);
+
+      try {
+        await service.registerGuest(sampleEvent.id, validGuestInput);
+        fail('Should have thrown BadRequestException');
+      } catch (err: unknown) {
+        expect(err).toBeInstanceOf(BadRequestException);
+        expect((err as BadRequestException).getResponse()).toMatchObject({
+          code: ErrorCode.EVENT_NOT_LIVE,
+        });
+      }
+    });
+
+    it('rejects guest registration when event is in terminal state CERTIFIED (B18 / F11)', async () => {
+      mockPrisma.$queryRaw.mockResolvedValueOnce([
+        {
+          id: sampleEvent.id,
+          capacity: 5,
+          state: EventState.CERTIFIED,
+          registration_opens_at: null,
+          registration_closes_at: null,
+          starts_at: new Date(Date.now() - 7200000),
+          ends_at: new Date(Date.now() - 3600000),
+        },
+      ]);
+
+      try {
+        await service.registerGuest(sampleEvent.id, validGuestInput);
+        fail('Should have thrown BadRequestException');
+      } catch (err: unknown) {
+        expect(err).toBeInstanceOf(BadRequestException);
+        expect((err as BadRequestException).getResponse()).toMatchObject({
+          code: ErrorCode.EVENT_NOT_LIVE,
+        });
+      }
+    });
+
+    it('rejects guest registration when event is in state CANCELLED', async () => {
+      mockPrisma.$queryRaw.mockResolvedValueOnce([
+        {
+          id: sampleEvent.id,
+          capacity: 5,
+          state: EventState.CANCELLED,
+          registration_opens_at: null,
+          registration_closes_at: null,
+          starts_at: new Date(Date.now() + 7200000),
+          ends_at: new Date(Date.now() + 10800000),
+        },
+      ]);
+
+      try {
+        await service.registerGuest(sampleEvent.id, validGuestInput);
+        fail('Should have thrown BadRequestException');
+      } catch (err: unknown) {
+        expect(err).toBeInstanceOf(BadRequestException);
+        expect((err as BadRequestException).getResponse()).toMatchObject({
+          code: ErrorCode.EVENT_NOT_LIVE,
+        });
+      }
+    });
+
+    it('rejects guest registration when event is in state DRAFT', async () => {
+      mockPrisma.$queryRaw.mockResolvedValueOnce([
+        {
+          id: sampleEvent.id,
+          capacity: 5,
+          state: EventState.DRAFT,
+          registration_opens_at: null,
+          registration_closes_at: null,
+          starts_at: new Date(Date.now() + 7200000),
+          ends_at: new Date(Date.now() + 10800000),
+        },
+      ]);
+
+      try {
+        await service.registerGuest(sampleEvent.id, validGuestInput);
+        fail('Should have thrown BadRequestException');
+      } catch (err: unknown) {
+        expect(err).toBeInstanceOf(BadRequestException);
+        expect((err as BadRequestException).getResponse()).toMatchObject({
+          code: ErrorCode.EVENT_NOT_LIVE,
+        });
+      }
+    });
+
+    it('rejects guest registration when event has already ended (B18 / F11)', async () => {
+      mockPrisma.$queryRaw.mockResolvedValueOnce([
+        {
+          id: sampleEvent.id,
+          capacity: 5,
+          state: EventState.PUBLISHED,
+          registration_opens_at: null,
+          registration_closes_at: null,
+          starts_at: new Date(Date.now() - 7200000),
+          ends_at: new Date(Date.now() - 1000),
+        },
+      ]);
+
+      try {
+        await service.registerGuest(sampleEvent.id, validGuestInput);
+        fail('Should have thrown BadRequestException');
+      } catch (err: unknown) {
+        expect(err).toBeInstanceOf(BadRequestException);
+        expect((err as BadRequestException).getResponse()).toMatchObject({
+          code: ErrorCode.EVENT_NOT_LIVE,
+        });
+      }
+    });
+
+    it('rejects guest registration before registration window opens (B18 / F11)', async () => {
+      mockPrisma.$queryRaw.mockResolvedValueOnce([
+        {
+          id: sampleEvent.id,
+          capacity: 5,
+          state: EventState.PUBLISHED,
+          registration_opens_at: new Date(Date.now() + 3600000),
+          registration_closes_at: new Date(Date.now() + 7200000),
+          starts_at: new Date(Date.now() + 8000000),
+          ends_at: new Date(Date.now() + 10000000),
+        },
+      ]);
+
+      try {
+        await service.registerGuest(sampleEvent.id, validGuestInput);
+        fail('Should have thrown BadRequestException');
+      } catch (err: unknown) {
+        expect(err).toBeInstanceOf(BadRequestException);
+        expect((err as BadRequestException).getResponse()).toMatchObject({
+          code: ErrorCode.REGISTRATION_CLOSED,
+        });
+      }
+    });
+
+    it('rejects guest registration after registration window closes (B18 / F11)', async () => {
+      mockPrisma.$queryRaw.mockResolvedValueOnce([
+        {
+          id: sampleEvent.id,
+          capacity: 5,
+          state: EventState.PUBLISHED,
+          registration_opens_at: new Date(Date.now() - 7200000),
+          registration_closes_at: new Date(Date.now() - 1000),
+          starts_at: new Date(Date.now() + 3600000),
+          ends_at: new Date(Date.now() + 7200000),
+        },
+      ]);
+
+      try {
+        await service.registerGuest(sampleEvent.id, validGuestInput);
+        fail('Should have thrown BadRequestException');
+      } catch (err: unknown) {
+        expect(err).toBeInstanceOf(BadRequestException);
+        expect((err as BadRequestException).getResponse()).toMatchObject({
+          code: ErrorCode.REGISTRATION_CLOSED,
+        });
+      }
+    });
+
+    it('rejects duplicate guest registration with same email', async () => {
+      mockPrisma.$queryRaw.mockResolvedValueOnce([
+        {
+          id: sampleEvent.id,
+          capacity: 5,
+          state: EventState.PUBLISHED,
+          registration_opens_at: null,
+          registration_closes_at: null,
+          starts_at: new Date(Date.now() + 3600000),
+          ends_at: new Date(Date.now() + 7200000),
+        },
+      ]);
+      mockPrisma.eventGuest.findUnique.mockResolvedValueOnce({
+        id: 'existing-guest',
+        email: validGuestInput.email,
+      });
+
+      try {
+        await service.registerGuest(sampleEvent.id, validGuestInput);
+        fail('Should have thrown ConflictException');
+      } catch (err: unknown) {
+        expect(err).toBeInstanceOf(ConflictException);
+        expect((err as ConflictException).getResponse()).toMatchObject({
+          code: ErrorCode.ALREADY_REGISTERED,
+        });
+      }
     });
   });
 

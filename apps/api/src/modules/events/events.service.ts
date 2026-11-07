@@ -29,8 +29,8 @@ interface LockedEventRow {
   state: string;
   registration_opens_at: Date | null;
   registration_closes_at: Date | null;
-  starts_at?: Date;
-  ends_at?: Date;
+  starts_at?: Date | null;
+  ends_at?: Date | null;
 }
 
 interface WaitlistMemberRow {
@@ -411,7 +411,7 @@ export class EventsService {
     return this.prisma.$transaction(async (tx) => {
       // 1. Lock event row
       const lockedRows = (await tx.$queryRaw`
-        SELECT id, capacity, state, registration_opens_at, registration_closes_at
+        SELECT id, capacity, state, registration_opens_at, registration_closes_at, starts_at, ends_at
         FROM events
         WHERE id = ${eventId}::uuid
         FOR UPDATE;
@@ -427,10 +427,39 @@ export class EventsService {
       const event = lockedRows[0]!;
       const now = new Date();
 
-      if (event.state === EventState.CANCELLED || event.state === EventState.DRAFT) {
+      // Enforce active lifecycle state
+      const activeStates = [
+        EventState.PUBLISHED,
+        EventState.REGISTRATION_OPEN,
+        EventState.LIVE,
+      ] as string[];
+
+      if (!activeStates.includes(event.state)) {
         throw new BadRequestException({
           code: ErrorCode.EVENT_NOT_LIVE,
           message: 'Registrations are not accepted for this event.',
+        });
+      }
+
+      // Enforce event conclusion cutoff
+      if (event.ends_at && new Date(event.ends_at) <= now) {
+        throw new BadRequestException({
+          code: ErrorCode.EVENT_NOT_LIVE,
+          message: 'This event has already ended.',
+        });
+      }
+
+      // Check registration window if defined
+      if (event.registration_opens_at && new Date(event.registration_opens_at) > now) {
+        throw new BadRequestException({
+          code: ErrorCode.REGISTRATION_CLOSED,
+          message: 'Registration for this event has not opened yet.',
+        });
+      }
+      if (event.registration_closes_at && new Date(event.registration_closes_at) < now) {
+        throw new BadRequestException({
+          code: ErrorCode.REGISTRATION_CLOSED,
+          message: 'Registration for this event is closed.',
         });
       }
 

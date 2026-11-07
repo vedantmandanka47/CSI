@@ -492,6 +492,170 @@ describe('RBAC & Audit Trail Subsystem (E2E) (ARCH-05, ARCH-06, SEC-23)', () => 
     });
   });
 
+  describe('Guest Event Registration Windows & Terminal State Enforcement (TASK-015 / B18 / F11)', () => {
+    it('rejects guest registration for event in terminal state COMPLETED', async () => {
+      const completedEvent = await prisma.event.create({
+        data: {
+          title: 'Guest Audit Completed Event',
+          slug: 'guest-audit-completed-event',
+          category: 'workshop',
+          description: 'Testing guest terminal state',
+          state: 'completed',
+          startsAt: new Date(Date.now() - 86400000),
+          endsAt: new Date(Date.now() - 3600000),
+          capacity: 10,
+        },
+      });
+
+      const res = await request(app.getHttpServer())
+        .post(`/api/events/${completedEvent.id}/guests`)
+        .send({
+          name: 'Guest Tester',
+          email: 'guest.completed@example.com',
+          college: 'GCET',
+          phone: '+919876543210',
+          consent_data_processing: true,
+        })
+        .expect(400);
+
+      expect(res.body.error.code).toBe(ErrorCode.EVENT_NOT_LIVE);
+      expect(res.body.error.message).toContain('not accepted');
+    });
+
+    it('rejects guest registration for past concluded event', async () => {
+      const pastEvent = await prisma.event.create({
+        data: {
+          title: 'Guest Audit Past Event',
+          slug: 'guest-audit-past-event',
+          category: 'workshop',
+          description: 'Testing guest concluded event',
+          state: 'published',
+          startsAt: new Date(Date.now() - 86400000),
+          endsAt: new Date(Date.now() - 10000),
+          capacity: 10,
+        },
+      });
+
+      const res = await request(app.getHttpServer())
+        .post(`/api/events/${pastEvent.id}/guests`)
+        .send({
+          name: 'Guest Tester',
+          email: 'guest.past@example.com',
+          college: 'GCET',
+          phone: '+919876543210',
+          consent_data_processing: true,
+        })
+        .expect(400);
+
+      expect(res.body.error.code).toBe(ErrorCode.EVENT_NOT_LIVE);
+      expect(res.body.error.message).toContain('already ended');
+    });
+
+    it('rejects guest registration before registration window opens', async () => {
+      const futureWindow = await prisma.event.create({
+        data: {
+          title: 'Guest Audit Future Window Event',
+          slug: 'guest-audit-future-window-event',
+          category: 'workshop',
+          description: 'Testing guest window open',
+          state: 'published',
+          startsAt: new Date(Date.now() + 86400000),
+          endsAt: new Date(Date.now() + 90000000),
+          registrationOpensAt: new Date(Date.now() + 3600000),
+          capacity: 10,
+        },
+      });
+
+      const res = await request(app.getHttpServer())
+        .post(`/api/events/${futureWindow.id}/guests`)
+        .send({
+          name: 'Guest Tester',
+          email: 'guest.future@example.com',
+          college: 'GCET',
+          phone: '+919876543210',
+          consent_data_processing: true,
+        })
+        .expect(400);
+
+      expect(res.body.error.code).toBe(ErrorCode.REGISTRATION_CLOSED);
+      expect(res.body.error.message).toContain('not opened yet');
+    });
+
+    it('rejects guest registration after registration window closes', async () => {
+      const closedWindow = await prisma.event.create({
+        data: {
+          title: 'Guest Audit Closed Window Event',
+          slug: 'guest-audit-closed-window-event',
+          category: 'workshop',
+          description: 'Testing guest window close',
+          state: 'published',
+          startsAt: new Date(Date.now() + 86400000),
+          endsAt: new Date(Date.now() + 90000000),
+          registrationOpensAt: new Date(Date.now() - 7200000),
+          registrationClosesAt: new Date(Date.now() - 3600000),
+          capacity: 10,
+        },
+      });
+
+      const res = await request(app.getHttpServer())
+        .post(`/api/events/${closedWindow.id}/guests`)
+        .send({
+          name: 'Guest Tester',
+          email: 'guest.closed@example.com',
+          college: 'GCET',
+          phone: '+919876543210',
+          consent_data_processing: true,
+        })
+        .expect(400);
+
+      expect(res.body.error.code).toBe(ErrorCode.REGISTRATION_CLOSED);
+      expect(res.body.error.message).toContain('closed');
+    });
+
+    it('accepts guest registration within open registration window', async () => {
+      const activeEvent = await prisma.event.create({
+        data: {
+          title: 'Guest Audit Active Event',
+          slug: 'guest-audit-active-event',
+          category: 'workshop',
+          description: 'Testing guest successful registration',
+          state: 'published',
+          startsAt: new Date(Date.now() + 86400000),
+          endsAt: new Date(Date.now() + 90000000),
+          registrationOpensAt: new Date(Date.now() - 3600000),
+          registrationClosesAt: new Date(Date.now() + 3600000),
+          capacity: 10,
+        },
+      });
+
+      const res = await request(app.getHttpServer())
+        .post(`/api/events/${activeEvent.id}/guests`)
+        .send({
+          name: 'Guest Tester',
+          email: 'guest.active@example.com',
+          college: 'GCET',
+          phone: '+919876543210',
+          consent_data_processing: true,
+        })
+        .expect(200);
+
+      expect(res.body.data.status).toBe(RegistrationStatus.REGISTERED);
+      expect(res.body.data.message).toContain('confirmed successfully');
+
+      // Verify guest record exists in database
+      const guest = await prisma.eventGuest.findUnique({
+        where: {
+          event_guest_unique: {
+            eventId: activeEvent.id,
+            email: 'guest.active@example.com',
+          },
+        },
+      });
+      expect(guest).not.toBeNull();
+      expect(guest?.status).toBe(RegistrationStatus.REGISTERED);
+    });
+  });
+
   afterAll(async () => {
     await prisma.termRollover.deleteMany();
     await prisma.termSnapshot.deleteMany();

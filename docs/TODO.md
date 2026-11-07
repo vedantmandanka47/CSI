@@ -25,7 +25,7 @@ This document is the unified, authoritative remediation master plan for the CSI 
 | :--- | :--- | :---: | :---: | :---: | :---: |
 | **Phase 0** | Critical Account & Authentication Blockers | 6 | 6 | 0 | 0 |
 | **Phase 1** | Build Pipeline, Toolchain & Runtime Initialization | 5 | 5 | 0 | 0 |
-| **Phase 2** | Core Domain Logic, Event Capacities & Role Boundaries | 8 | 3 | 0 | 5 |
+| **Phase 2** | Core Domain Logic, Event Capacities & Role Boundaries | 8 | 4 | 0 | 4 |
 | **Phase 3** | Attendance, Offline Sync & Scanner System | 7 | 0 | 0 | 7 |
 | **Phase 4** | Document Engine, Batch Processing & File Storage Durability | 9 | 0 | 0 | 9 |
 | **Phase 5** | Annual Rollover, Checklists, Workspaces & Transactions | 5 | 0 | 0 | 5 |
@@ -34,7 +34,7 @@ This document is the unified, authoritative remediation master plan for the CSI 
 | **Phase 8** | Database, Disaster Recovery, Backup & Archive Safety | 7 | 4 | 1 | 2 |
 | **Phase 9** | API Validation, Error Handling, Client Resilience & E2E | 4 | 0 | 0 | 4 |
 | **Phase 10** | Production Operations, Deployment Recipes & Documentation | 5 | 0 | 0 | 5 |
-| **TOTAL** | **Comprehensive Full-Platform Remediation** | **66** | **19** | **0** | **47** |
+| **TOTAL** | **Comprehensive Full-Platform Remediation** | **66** | **20** | **0** | **46** |
 
 ---
 
@@ -320,10 +320,19 @@ This document is the unified, authoritative remediation master plan for the CSI 
     3. Block cancellations or re-registrations of already `ATTENDED` records.
     4. Add concurrency tests ensuring capacity is never exceeded during active check-in.
 
-- [ ] **TASK-015 [HIGH] [B18 / F11]: Enforce Registration Windows & Terminal State Checks for Guest Registrations**
+- [x] **TASK-015 [HIGH] [B18 / F11]: Enforce Registration Windows & Terminal State Checks for Guest Registrations**
   - **Severity:** High (Business Logic Flaw)
+  - **Completed:**
+    - Updated `SELECT ... FOR UPDATE` row-level lock query in `EventsService.registerGuest` to select `starts_at` and `ends_at`.
+    - Hardened lifecycle state validation in `registerGuest` to reject non-active or terminal event states (`DRAFT`, `CANCELLED`, `COMPLETED`, `CERTIFIED`) with `BadRequestException` (`ErrorCode.EVENT_NOT_LIVE`).
+    - Enforced event conclusion cutoff (`ends_at <= now`) with `BadRequestException` (`ErrorCode.EVENT_NOT_LIVE`).
+    - Enforced temporal registration windows (`registration_opens_at > now` and `registration_closes_at < now`) with `BadRequestException` (`ErrorCode.REGISTRATION_CLOSED`).
+    - Added comprehensive unit tests in `tests/unit/api/modules/events/events.service.spec.ts` covering active window registration, waitlisting at capacity, terminal states `COMPLETED`, `CERTIFIED`, `CANCELLED`, `DRAFT`, past ended events, unopened registration windows, and closed registration windows (26/26 tests passing).
+    - Added live PostgreSQL E2E tests in `tests/e2e/rbac-audit.e2e-spec.ts` validating guest registration against `COMPLETED` events, concluded events, unopened windows, closed windows, and successful open-window registration (20/20 tests passing).
   - **Affected Files:**
     - `apps/api/src/modules/events/events.service.ts` (`registerGuest`)
+    - `tests/unit/api/modules/events/events.service.spec.ts`
+    - `tests/e2e/rbac-audit.e2e-spec.ts`
   - **Problem:** `registerGuest()` queries registration window columns but never validates them. It only rejects `DRAFT` and `CANCELLED` events. Guests can register for completed, expired, or certified events decades after they concluded.
   - **Remediation Plan:**
     1. Unify admission policy: enforce that `event.status === 'PUBLISHED'` or `'LIVE'`, `starts_at > NOW()`, and `NOW()` is strictly within `registration_opens_at` and `registration_closes_at`.
