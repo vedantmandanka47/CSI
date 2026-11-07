@@ -23,7 +23,7 @@ This document is the unified, authoritative remediation master plan for the CSI 
 
 | Phase | Description | Total Tasks | Completed | In Progress | Pending |
 | :--- | :--- | :---: | :---: | :---: | :---: |
-| **Phase 0** | Critical Account & Authentication Blockers | 6 | 1 | 0 | 5 |
+| **Phase 0** | Critical Account & Authentication Blockers | 6 | 2 | 0 | 4 |
 | **Phase 1** | Build Pipeline, Toolchain & Runtime Initialization | 5 | 5 | 0 | 0 |
 | **Phase 2** | Core Domain Logic, Event Capacities & Role Boundaries | 8 | 0 | 0 | 8 |
 | **Phase 3** | Attendance, Offline Sync & Scanner System | 7 | 0 | 0 | 7 |
@@ -34,7 +34,7 @@ This document is the unified, authoritative remediation master plan for the CSI 
 | **Phase 8** | Database, Disaster Recovery, Backup & Archive Safety | 7 | 4 | 1 | 2 |
 | **Phase 9** | API Validation, Error Handling, Client Resilience & E2E | 4 | 0 | 0 | 4 |
 | **Phase 10** | Production Operations, Deployment Recipes & Documentation | 5 | 0 | 0 | 5 |
-| **TOTAL** | **Comprehensive Full-Platform Remediation** | **66** | **11** | **1** | **54** |
+| **TOTAL** | **Comprehensive Full-Platform Remediation** | **66** | **12** | **1** | **53** |
 
 ---
 
@@ -68,12 +68,17 @@ This document is the unified, authoritative remediation master plan for the CSI 
     5. Invalidate all active reset tokens in the database.
     6. Add negative unit tests asserting the production API response never contains `resetToken`.
 
-- [ ] **TASK-002 [CRITICAL] [B02 / F05]: Fix Event Registration & Cancellation Route Authorization**
+- [x] **TASK-002 [CRITICAL] [B02 / F05]: Fix Event Registration & Cancellation Route Authorization**
   - **Severity:** Critical (Core Functionality Broken / 403 Forbidden)
+  - **Completed:**
+    - Decorated `POST :id/register` and `POST :id/cancel` with `@Authenticated()` in `apps/api/src/modules/events/events.controller.ts`.
+    - Verified `DenyByDefaultGuard` permits authenticated members (`RoleCode.MEMBER`) and rejects unauthenticated callers with 401 Unauthorized (instead of 403 Forbidden route misconfiguration).
+    - Added comprehensive unit test suite in `tests/unit/api/modules/events/events.controller.spec.ts` (8/8 passed).
+    - Added E2E tests in `tests/e2e/rbac-audit.e2e-spec.ts` for authenticated event registration and cancellation.
   - **Affected Files:**
     - `apps/api/src/modules/events/events.controller.ts` (`:id/register`, `:id/cancel`)
-    - `tests/unit/api/modules/events/events.service.spec.ts`
-    - `tests/e2e/events.e2e-spec.ts`
+    - `tests/unit/api/modules/events/events.controller.spec.ts` (new)
+    - `tests/e2e/rbac-audit.e2e-spec.ts`
   - **Problem:** Handlers `POST :id/register` (line 112) and `POST :id/cancel` (line 155) lack `@Authenticated()`, `@RequirePermission()`, or `@Public()`. The global `DenyByDefaultGuard` throws HTTP 403 "Route is not explicitly configured" for every logged-in member. Members cannot register for or cancel events anywhere on the platform.
   - **Remediation Plan:**
     1. Add `@Authenticated()` decorator to `registerMember` and `cancelRegistration` in `EventsController`.

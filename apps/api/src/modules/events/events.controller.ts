@@ -26,7 +26,7 @@ import {
   PublicEventDetail,
   RegistrationResponse,
 } from '@csi/shared';
-import { Public, RequirePermission, ReqUser, ExemptCsrf } from '../../common/decorators/index.js';
+import { Public, Authenticated, RequirePermission, ReqUser, ExemptCsrf } from '../../common/decorators/index.js';
 import { RateLimiterService } from '../../common/services/rate-limiter.service.js';
 
 @Controller('events')
@@ -109,6 +109,7 @@ export class EventsController {
   /**
    * Authenticated member event registration
    */
+  @Authenticated()
   @Post(':id/register')
   @HttpCode(HttpStatus.OK)
   async registerMember(
@@ -152,6 +153,7 @@ export class EventsController {
   /**
    * Cancel event registration
    */
+  @Authenticated()
   @Post(':id/cancel')
   @HttpCode(HttpStatus.OK)
   async cancelRegistration(

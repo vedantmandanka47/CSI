@@ -51,6 +51,7 @@ describe('RBAC & Audit Trail Subsystem (E2E) (ARCH-05, ARCH-06, SEC-23)', () => 
     await prisma.registration.deleteMany();
     await prisma.eventGuest.deleteMany();
     await prisma.event.deleteMany();
+    await prisma.venue.deleteMany();
     await prisma.session.deleteMany();
     await prisma.verificationToken.deleteMany();
     await prisma.passwordResetToken.deleteMany();
@@ -242,6 +243,73 @@ describe('RBAC & Audit Trail Subsystem (E2E) (ARCH-05, ARCH-06, SEC-23)', () => 
     });
   });
 
+  describe('5. Member Event Registration & Cancellation Authorization (TASK-002 / B02 / F05)', () => {
+    let testEventId: string;
+    const csrfToken = 'test-csrf-token-32-chars-at-least-12345';
+    const csrfCookie = `csi_csrf=${csrfToken}`;
+
+    beforeAll(async () => {
+      const venue = await prisma.venue.create({
+        data: {
+          name: 'Main Auditorium E2E',
+          capacity: 100,
+          isActive: true,
+        },
+      });
+
+      const event = await prisma.event.create({
+        data: {
+          title: 'Cybersecurity Symposium 2026',
+          slug: 'cybersecurity-symposium-2026',
+          category: 'workshop',
+          description: 'Hands-on defense workshop.',
+          state: 'published',
+          startsAt: new Date(Date.now() + 86400000),
+          endsAt: new Date(Date.now() + 90000000),
+          registrationOpensAt: new Date(Date.now() - 3600000),
+          registrationClosesAt: new Date(Date.now() + 80000000),
+          capacity: 50,
+          venueId: venue.id,
+        },
+      });
+      testEventId = event.id;
+    });
+
+    it('rejects unauthenticated caller on POST /api/events/:id/register with 401', async () => {
+      await request(app.getHttpServer())
+        .post(`/api/events/${testEventId}/register`)
+        .set('Cookie', [csrfCookie])
+        .set('x-csrf-token', csrfToken)
+        .send({})
+        .expect(401);
+    });
+
+    it('allows authenticated member to register for event without 403 route misconfiguration', async () => {
+      const res = await request(app.getHttpServer())
+        .post(`/api/events/${testEventId}/register`)
+        .set('Cookie', [memberSessionCookie, csrfCookie])
+        .set('x-csrf-token', csrfToken)
+        .send({ notes: 'Attending symposium' })
+        .expect(200);
+
+      expect(res.body.data).toBeDefined();
+      expect(res.body.data.status).toBe('registered');
+      expect(res.body.data.event_id).toBe(testEventId);
+      expect(res.body.data.user_id).toBe(memberUserId);
+    });
+
+    it('allows authenticated member to cancel their event registration', async () => {
+      const res = await request(app.getHttpServer())
+        .post(`/api/events/${testEventId}/cancel`)
+        .set('Cookie', [memberSessionCookie, csrfCookie])
+        .set('x-csrf-token', csrfToken)
+        .send({})
+        .expect(200);
+
+      expect(res.body.message).toContain('cancelled');
+    });
+  });
+
   afterAll(async () => {
     await prisma.termRollover.deleteMany();
     await prisma.termSnapshot.deleteMany();
@@ -259,6 +327,7 @@ describe('RBAC & Audit Trail Subsystem (E2E) (ARCH-05, ARCH-06, SEC-23)', () => 
     await prisma.registration.deleteMany();
     await prisma.eventGuest.deleteMany();
     await prisma.event.deleteMany();
+    await prisma.venue.deleteMany();
     await prisma.session.deleteMany();
     await prisma.verificationToken.deleteMany();
     await prisma.passwordResetToken.deleteMany();
