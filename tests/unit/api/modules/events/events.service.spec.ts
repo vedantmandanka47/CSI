@@ -768,6 +768,142 @@ describe('EventsService', () => {
       }
       expect(mockPrisma.registration.update).not.toHaveBeenCalled();
     });
+
+    it('promotes earliest waitlisted member when member joined waitlist earlier than guest (TASK-017 / F13)', async () => {
+      const memberTime = new Date('2026-11-20T10:00:00Z');
+      const guestTime = new Date('2026-11-20T10:05:00Z');
+
+      mockPrisma.$queryRaw
+        .mockResolvedValueOnce([{ id: sampleEvent.id, capacity: 2 }]) // Lock event
+        .mockResolvedValueOnce([{ id: 'member-row-early', user_id: 'member-early', registered_at: memberTime }])
+        .mockResolvedValueOnce([{ id: 'guest-row-late', email: 'guest.late@example.com', created_at: guestTime }]);
+
+      mockPrisma.registration.findUnique.mockResolvedValueOnce({
+        id: 'reg-cancelled',
+        status: RegistrationStatus.REGISTERED,
+      });
+      mockPrisma.registration.update.mockResolvedValueOnce({});
+
+      const result = await service.cancelRegistration(sampleEvent.id, 'cancelling-user');
+
+      expect(result.promoted_waitlist_id).toBe('member-row-early');
+      expect(mockPrisma.registration.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'member-row-early' },
+          data: { status: RegistrationStatus.REGISTERED },
+        }),
+      );
+      expect(mockPrisma.auditLog.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ action: 'WAITLIST_PROMOTED_MEMBER' }),
+        }),
+      );
+    });
+
+    it('promotes earliest waitlisted guest when guest joined waitlist earlier than member (TASK-017 / F13)', async () => {
+      const guestTime = new Date('2026-11-20T10:00:00Z');
+      const memberTime = new Date('2026-11-20T10:05:00Z');
+
+      mockPrisma.$queryRaw
+        .mockResolvedValueOnce([{ id: sampleEvent.id, capacity: 2 }]) // Lock event
+        .mockResolvedValueOnce([{ id: 'member-row-late', user_id: 'member-late', registered_at: memberTime }])
+        .mockResolvedValueOnce([{ id: 'guest-row-early', email: 'guest.early@example.com', created_at: guestTime }]);
+
+      mockPrisma.registration.findUnique.mockResolvedValueOnce({
+        id: 'reg-cancelled',
+        status: RegistrationStatus.REGISTERED,
+      });
+      mockPrisma.eventGuest.update.mockResolvedValueOnce({});
+
+      const result = await service.cancelRegistration(sampleEvent.id, 'cancelling-user');
+
+      expect(result.promoted_waitlist_id).toBe('guest-row-early');
+      expect(mockPrisma.eventGuest.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'guest-row-early' },
+          data: { status: RegistrationStatus.REGISTERED },
+        }),
+      );
+      expect(mockPrisma.auditLog.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ action: 'WAITLIST_PROMOTED_GUEST' }),
+        }),
+      );
+    });
+
+    it('promotes member on exact timestamp tie as institutional priority tie-breaker (TASK-017 / F13)', async () => {
+      const tieTime = new Date('2026-11-20T10:00:00Z');
+
+      mockPrisma.$queryRaw
+        .mockResolvedValueOnce([{ id: sampleEvent.id, capacity: 2 }]) // Lock event
+        .mockResolvedValueOnce([{ id: 'member-row-tie', user_id: 'member-tie', registered_at: tieTime }])
+        .mockResolvedValueOnce([{ id: 'guest-row-tie', email: 'guest.tie@example.com', created_at: tieTime }]);
+
+      mockPrisma.registration.findUnique.mockResolvedValueOnce({
+        id: 'reg-cancelled',
+        status: RegistrationStatus.REGISTERED,
+      });
+      mockPrisma.registration.update.mockResolvedValueOnce({});
+
+      const result = await service.cancelRegistration(sampleEvent.id, 'cancelling-user');
+
+      expect(result.promoted_waitlist_id).toBe('member-row-tie');
+      expect(mockPrisma.registration.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'member-row-tie' },
+          data: { status: RegistrationStatus.REGISTERED },
+        }),
+      );
+      expect(mockPrisma.auditLog.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ action: 'WAITLIST_PROMOTED_MEMBER' }),
+        }),
+      );
+    });
+
+    it('promotes guest when only guest waitlist has candidates', async () => {
+      mockPrisma.$queryRaw
+        .mockResolvedValueOnce([{ id: sampleEvent.id, capacity: 2 }]) // Lock event
+        .mockResolvedValueOnce([]) // No waitlisted members
+        .mockResolvedValueOnce([{ id: 'guest-only', email: 'guest.only@example.com', created_at: new Date() }]);
+
+      mockPrisma.registration.findUnique.mockResolvedValueOnce({
+        id: 'reg-cancelled',
+        status: RegistrationStatus.REGISTERED,
+      });
+      mockPrisma.eventGuest.update.mockResolvedValueOnce({});
+
+      const result = await service.cancelRegistration(sampleEvent.id, 'cancelling-user');
+
+      expect(result.promoted_waitlist_id).toBe('guest-only');
+      expect(mockPrisma.eventGuest.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'guest-only' },
+          data: { status: RegistrationStatus.REGISTERED },
+        }),
+      );
+    });
+
+    it('does not promote anyone when neither member nor guest waitlists have candidates', async () => {
+      mockPrisma.$queryRaw
+        .mockResolvedValueOnce([{ id: sampleEvent.id, capacity: 2 }]) // Lock event
+        .mockResolvedValueOnce([]) // No waitlisted members
+        .mockResolvedValueOnce([]); // No waitlisted guests
+
+      mockPrisma.registration.findUnique.mockResolvedValueOnce({
+        id: 'reg-cancelled',
+        status: RegistrationStatus.REGISTERED,
+      });
+
+      const result = await service.cancelRegistration(sampleEvent.id, 'cancelling-user');
+
+      expect(result.promoted_waitlist_id).toBeUndefined();
+      expect(mockPrisma.registration.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ status: RegistrationStatus.CANCELLED }),
+        }),
+      );
+    });
   });
 
   describe('generateEventIcs & generateCalendarFeed', () => {

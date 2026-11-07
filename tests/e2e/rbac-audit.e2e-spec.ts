@@ -540,6 +540,96 @@ describe('RBAC & Audit Trail Subsystem (E2E) (ARCH-05, ARCH-06, SEC-23)', () => 
       expect(res.body.error.code).toBe(ErrorCode.EVENT_NOT_LIVE);
       expect(res.body.error.message).toContain('already ended');
     });
+
+    it('promotes earliest waitlisted guest when guest was queued chronologically before member upon seat cancellation (TASK-017 / F13)', async () => {
+      // 1. Create dedicated event with capacity = 1
+      const promoEvent = await prisma.event.create({
+        data: {
+          title: 'Waitlist FIFO Event',
+          slug: 'waitlist-fifo-event',
+          category: 'workshop',
+          description: 'Testing FIFO waitlist promotion',
+          state: 'published',
+          startsAt: new Date(Date.now() + 86400000),
+          endsAt: new Date(Date.now() + 90000000),
+          capacity: 1,
+        },
+      });
+
+      // 2. Member 1 registers and takes the only seat
+      const regRes = await request(app.getHttpServer())
+        .post(`/api/events/${promoEvent.id}/register`)
+        .set('Cookie', [memberSessionCookie, csrfCookie])
+        .set('x-csrf-token', csrfToken)
+        .send({})
+        .expect(200);
+      expect(regRes.body.data.status).toBe(RegistrationStatus.REGISTERED);
+
+      // 3. Guest A registers (event is at capacity 1/1) -> placed on waitlist at T1
+      const guestRes = await request(app.getHttpServer())
+        .post(`/api/events/${promoEvent.id}/guests`)
+        .send({
+          name: 'Early Guest',
+          email: 'early.guest.fifo@example.com',
+          college: 'GCET',
+          phone: '+919876543210',
+          consent_data_processing: true,
+        })
+        .expect(200);
+      expect(guestRes.body.data.status).toBe(RegistrationStatus.WAITLISTED);
+
+      // 4. Member 2 registers at T2 (later) -> placed on waitlist at T2
+      await new Promise((r) => setTimeout(r, 50));
+      const user2 = await prisma.user.create({
+        data: {
+          email: 'member.later.fifo@gcet.ac.in',
+          name: 'Later Member',
+          passwordHash: 'dummy',
+          status: UserStatus.ACTIVE,
+        },
+      });
+      await prisma.roleAssignment.create({
+        data: { userId: user2.id, roleId: memberRoleId },
+      });
+      const rawToken2 = generateSecureToken();
+      await prisma.session.create({
+        data: {
+          userId: user2.id,
+          tokenHash: hashToken(rawToken2),
+          expiresAt: new Date(Date.now() + 86400000),
+        },
+      });
+      const cookie2 = `csi_session=${rawToken2}; Path=/; HttpOnly; SameSite=Strict`;
+
+      const member2Res = await request(app.getHttpServer())
+        .post(`/api/events/${promoEvent.id}/register`)
+        .set('Cookie', [cookie2, csrfCookie])
+        .set('x-csrf-token', csrfToken)
+        .send({})
+        .expect(200);
+      expect(member2Res.body.data.status).toBe(RegistrationStatus.WAITLISTED);
+
+      // 5. Member 1 cancels registration: should promote Guest A (earlier) instead of Member 2 (later)
+      const cancelRes = await request(app.getHttpServer())
+        .post(`/api/events/${promoEvent.id}/cancel`)
+        .set('Cookie', [memberSessionCookie, csrfCookie])
+        .set('x-csrf-token', csrfToken)
+        .send({})
+        .expect(200);
+
+      expect(cancelRes.body.promoted_waitlist_id).toBe(guestRes.body.data.id);
+
+      // 6. Verify in database: Guest A is REGISTERED, Member 2 remains WAITLISTED
+      const promotedGuest = await prisma.eventGuest.findUnique({
+        where: { id: guestRes.body.data.id },
+      });
+      expect(promotedGuest?.status).toBe(RegistrationStatus.REGISTERED);
+
+      const remainingWaitlistMember = await prisma.registration.findUnique({
+        where: { id: member2Res.body.data.id },
+      });
+      expect(remainingWaitlistMember?.status).toBe(RegistrationStatus.WAITLISTED);
+    });
   });
 
   describe('Guest Event Registration Windows & Terminal State Enforcement (TASK-015 / B18 / F11)', () => {

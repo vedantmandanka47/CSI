@@ -36,11 +36,13 @@ interface LockedEventRow {
 interface WaitlistMemberRow {
   id: string;
   user_id: string;
+  registered_at?: Date | string;
 }
 
 interface WaitlistGuestRow {
   id: string;
   email: string;
+  created_at?: Date | string;
 }
 
 interface CalendarEventItem {
@@ -550,7 +552,12 @@ export class EventsService {
   }
 
   /**
-   * Cancel authenticated member registration and automatically promote earliest waitlisted attendee (INT-05).
+   * Cancel authenticated member registration and automatically promote earliest waitlisted attendee (INT-05, F13).
+   *
+   * Waitlist Promotion Policy: Chronological FIFO Across All Attendees.
+   * Under the event row lock, retrieves the earliest candidate from both the member and guest waitlists.
+   * Promotes whichever attendee queued earliest (comparing member registered_at vs guest created_at).
+   * In the event of an exact timestamp tie, institutional members receive priority.
    */
   async cancelRegistration(eventId: string, userId: string): Promise<{ message: string; promoted_waitlist_id?: string }> {
     return this.prisma.$transaction(async (tx) => {
@@ -598,18 +605,57 @@ export class EventsService {
 
       let promotedId: string | undefined;
 
-      // If they held a registered seat, promote the earliest waitlist member or guest
+      // If they held a registered seat, promote the earliest waitlisted attendee (FIFO policy across pools)
       if (wasRegistered) {
+        // Query earliest waitlisted member
         const earliestWaitlistedMember = (await tx.$queryRaw`
-          SELECT id, user_id FROM registrations
+          SELECT id, user_id, registered_at FROM registrations
           WHERE event_id = ${eventId}::uuid AND status = 'waitlisted'
           ORDER BY registered_at ASC
           LIMIT 1
           FOR UPDATE;
         `) as WaitlistMemberRow[];
 
-        if (earliestWaitlistedMember && earliestWaitlistedMember.length > 0) {
-          const waitlistMember = earliestWaitlistedMember[0]!;
+        // Query earliest waitlisted guest
+        const earliestWaitlistedGuest = (await tx.$queryRaw`
+          SELECT id, email, created_at FROM event_guests
+          WHERE event_id = ${eventId}::uuid AND status = 'waitlisted'
+          ORDER BY created_at ASC
+          LIMIT 1
+          FOR UPDATE;
+        `) as WaitlistGuestRow[];
+
+        const waitlistMember = earliestWaitlistedMember?.[0];
+        const waitlistGuest = earliestWaitlistedGuest?.[0];
+
+        // Determine chronological promotion winner (FIFO across both pools)
+        // Tie-breaker: Institutional member takes precedence if timestamps are identical
+        let promoteGuest = false;
+        if (waitlistMember && waitlistGuest) {
+          const memberTime = waitlistMember.registered_at ? new Date(waitlistMember.registered_at).getTime() : 0;
+          const guestTime = waitlistGuest.created_at ? new Date(waitlistGuest.created_at).getTime() : 0;
+          promoteGuest = guestTime < memberTime;
+        } else if (!waitlistMember && waitlistGuest) {
+          promoteGuest = true;
+        }
+
+        if (promoteGuest && waitlistGuest) {
+          await tx.eventGuest.update({
+            where: { id: waitlistGuest.id },
+            data: { status: RegistrationStatus.REGISTERED },
+          });
+          promotedId = waitlistGuest.id;
+
+          await tx.auditLog.create({
+            data: {
+              actorId: null,
+              action: 'WAITLIST_PROMOTED_GUEST',
+              targetType: 'event_guest',
+              targetId: waitlistGuest.id,
+              afterJson: { event_id: eventId, email: waitlistGuest.email },
+            },
+          });
+        } else if (waitlistMember) {
           await tx.registration.update({
             where: { id: waitlistMember.id },
             data: { status: RegistrationStatus.REGISTERED },
@@ -625,34 +671,6 @@ export class EventsService {
               afterJson: { event_id: eventId, user_id: waitlistMember.user_id },
             },
           });
-        } else {
-          // Check for waitlisted guests
-          const earliestWaitlistedGuest = (await tx.$queryRaw`
-            SELECT id, email FROM event_guests
-            WHERE event_id = ${eventId}::uuid AND status = 'waitlisted'
-            ORDER BY created_at ASC
-            LIMIT 1
-            FOR UPDATE;
-          `) as WaitlistGuestRow[];
-
-          if (earliestWaitlistedGuest && earliestWaitlistedGuest.length > 0) {
-            const waitlistGuest = earliestWaitlistedGuest[0]!;
-            await tx.eventGuest.update({
-              where: { id: waitlistGuest.id },
-              data: { status: RegistrationStatus.REGISTERED },
-            });
-            promotedId = waitlistGuest.id;
-
-            await tx.auditLog.create({
-              data: {
-                actorId: null,
-                action: 'WAITLIST_PROMOTED_GUEST',
-                targetType: 'event_guest',
-                targetId: waitlistGuest.id,
-                afterJson: { event_id: eventId, email: waitlistGuest.email },
-              },
-            });
-          }
         }
       }
 

@@ -25,7 +25,7 @@ This document is the unified, authoritative remediation master plan for the CSI 
 | :--- | :--- | :---: | :---: | :---: | :---: |
 | **Phase 0** | Critical Account & Authentication Blockers | 6 | 6 | 0 | 0 |
 | **Phase 1** | Build Pipeline, Toolchain & Runtime Initialization | 5 | 5 | 0 | 0 |
-| **Phase 2** | Core Domain Logic, Event Capacities & Role Boundaries | 8 | 5 | 0 | 3 |
+| **Phase 2** | Core Domain Logic, Event Capacities & Role Boundaries | 8 | 6 | 0 | 2 |
 | **Phase 3** | Attendance, Offline Sync & Scanner System | 7 | 0 | 0 | 7 |
 | **Phase 4** | Document Engine, Batch Processing & File Storage Durability | 9 | 0 | 0 | 9 |
 | **Phase 5** | Annual Rollover, Checklists, Workspaces & Transactions | 5 | 0 | 0 | 5 |
@@ -34,7 +34,7 @@ This document is the unified, authoritative remediation master plan for the CSI 
 | **Phase 8** | Database, Disaster Recovery, Backup & Archive Safety | 7 | 4 | 1 | 2 |
 | **Phase 9** | API Validation, Error Handling, Client Resilience & E2E | 4 | 0 | 0 | 4 |
 | **Phase 10** | Production Operations, Deployment Recipes & Documentation | 5 | 0 | 0 | 5 |
-| **TOTAL** | **Comprehensive Full-Platform Remediation** | **66** | **21** | **0** | **45** |
+| **TOTAL** | **Comprehensive Full-Platform Remediation** | **66** | **22** | **0** | **44** |
 
 ---
 
@@ -356,10 +356,19 @@ This document is the unified, authoritative remediation master plan for the CSI 
     1. Ensure member registration enforces event end time and active status identical to the guest check.
     2. Add unit tests for member registrations on past events without explicit windows.
 
-- [ ] **TASK-017 [MEDIUM] [F13]: Unify Waitlist Promotion Strategy (FIFO vs Tier Policy)**
+- [x] **TASK-017 [MEDIUM] [F13]: Unify Waitlist Promotion Strategy (FIFO vs Tier Policy)**
   - **Severity:** Medium (Fairness / Specification Discrepancy)
+  - **Completed:**
+    - Documented and implemented the unified waitlist promotion policy: **Strict Chronological FIFO Across All Attendees** with institutional member tie-breaker on identical timestamps.
+    - Updated `EventsService.cancelRegistration` under the event row lock to retrieve earliest candidates from both member (`registrations`) and guest (`event_guests`) waitlists.
+    - Promotes whichever candidate queued earliest chronologically (`guest.created_at` vs `member.registered_at`), eliminating unfair skipping of earlier-waitlisted guests.
+    - Updated `WaitlistMemberRow` and `WaitlistGuestRow` interfaces to type-safely support timestamp comparisons.
+    - Added comprehensive unit tests in `tests/unit/api/modules/events/events.service.spec.ts` asserting: member promoted when queued earlier, guest promoted when queued earlier, member promoted on exact timestamp tie, guest promoted when member waitlist is empty, and graceful no-op when both are empty (38/38 tests passing).
+    - Added live PostgreSQL E2E test in `tests/e2e/rbac-audit.e2e-spec.ts` asserting that an earlier-waitlisted guest is promoted over a later-waitlisted member upon seat cancellation (23/23 tests passing).
   - **Affected Files:**
     - `apps/api/src/modules/events/events.service.ts` (`cancelRegistration`)
+    - `tests/unit/api/modules/events/events.service.spec.ts`
+    - `tests/e2e/rbac-audit.e2e-spec.ts`
   - **Problem:** `cancelRegistration` searches the earliest waitlisted member first, and only looks at guests if no member is waitlisted, contradicting comments promising earliest waitlisted attendee promotion.
   - **Remediation Plan:**
     1. Document the intended policy: either strict chronological FIFO across all attendees or explicit member priority.
