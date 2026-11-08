@@ -15,6 +15,7 @@ import {
   RecipientType,
   UserStatus,
   RoleCode,
+  ErrorCode,
 } from '@csi/shared';
 import { generateTotp } from '../../../../../apps/api/src/common/crypto/totp.js';
 
@@ -899,6 +900,343 @@ describe('AttendanceService (M9)', () => {
 
       expect(result.id).toBe('rec-vol-1');
       expect(result.status).toBe(AttendanceStatus.VERIFIED);
+    });
+  });
+
+  describe('Attendance Idempotency Binding (TASK-026 / F44)', () => {
+    describe('checkInQr idempotency binding', () => {
+      it('returns existing record if client_uuid replay matches session, member, and actor', async () => {
+        mockPrisma.attendanceSession.findUnique.mockResolvedValue(sampleSession);
+        mockIdCardService.verifyQrPass.mockResolvedValue({
+          valid: true,
+          user_id: 'member-1',
+        });
+        mockPrisma.attendanceRecord.findUnique.mockResolvedValueOnce({
+          id: 'rec-qr-existing',
+          sessionId: 'session-1',
+          eventId: 'event-1',
+          subjectType: RecipientType.MEMBER,
+          subjectId: 'member-1',
+          method: AttendanceMethod.QR_SCAN,
+          status: AttendanceStatus.VERIFIED,
+          clientUuid: 'uuid-qr-1',
+          clientMarkedAt: new Date(),
+          verifiedAt: new Date(),
+          markedById: 'volunteer-1',
+          notes: null,
+          createdAt: new Date(),
+        });
+
+        const result = await service.checkInQr(
+          {
+            session_id: 'session-1',
+            qr_token: 'valid.token',
+            client_uuid: 'uuid-qr-1',
+          },
+          'volunteer-1',
+        );
+
+        expect(result.id).toBe('rec-qr-existing');
+        expect(result.status).toBe(AttendanceStatus.VERIFIED);
+      });
+
+      it('rejects with IDEMPOTENCY_PAYLOAD_MISMATCH if client_uuid belongs to a different member', async () => {
+        mockPrisma.attendanceSession.findUnique.mockResolvedValue(sampleSession);
+        mockIdCardService.verifyQrPass.mockResolvedValue({
+          valid: true,
+          user_id: 'member-1',
+        });
+        mockPrisma.attendanceRecord.findUnique.mockResolvedValueOnce({
+          id: 'rec-qr-existing',
+          sessionId: 'session-1',
+          subjectId: 'member-DIFFERENT',
+          markedById: 'volunteer-1',
+        });
+
+        await expect(
+          service.checkInQr(
+            {
+              session_id: 'session-1',
+              qr_token: 'valid.token',
+              client_uuid: 'uuid-qr-1',
+            },
+            'volunteer-1',
+          ),
+        ).rejects.toMatchObject({
+          response: expect.objectContaining({
+            code: ErrorCode.IDEMPOTENCY_PAYLOAD_MISMATCH,
+          }),
+        });
+      });
+
+      it('rejects with IDEMPOTENCY_PAYLOAD_MISMATCH if client_uuid was marked by a different actor', async () => {
+        mockPrisma.attendanceSession.findUnique.mockResolvedValue(sampleSession);
+        mockIdCardService.verifyQrPass.mockResolvedValue({
+          valid: true,
+          user_id: 'member-1',
+        });
+        mockPrisma.attendanceRecord.findUnique.mockResolvedValueOnce({
+          id: 'rec-qr-existing',
+          sessionId: 'session-1',
+          subjectId: 'member-1',
+          markedById: 'DIFFERENT-ACTOR',
+        });
+
+        await expect(
+          service.checkInQr(
+            {
+              session_id: 'session-1',
+              qr_token: 'valid.token',
+              client_uuid: 'uuid-qr-1',
+            },
+            'volunteer-1',
+          ),
+        ).rejects.toMatchObject({
+          response: expect.objectContaining({
+            code: ErrorCode.IDEMPOTENCY_PAYLOAD_MISMATCH,
+          }),
+        });
+      });
+
+      it('rejects with IDEMPOTENCY_PAYLOAD_MISMATCH if client_uuid was recorded for a different session', async () => {
+        mockPrisma.attendanceSession.findUnique.mockResolvedValue(sampleSession);
+        mockIdCardService.verifyQrPass.mockResolvedValue({
+          valid: true,
+          user_id: 'member-1',
+        });
+        mockPrisma.attendanceRecord.findUnique.mockResolvedValueOnce({
+          id: 'rec-qr-existing',
+          sessionId: 'DIFFERENT-SESSION',
+          subjectId: 'member-1',
+          markedById: 'volunteer-1',
+        });
+
+        await expect(
+          service.checkInQr(
+            {
+              session_id: 'session-1',
+              qr_token: 'valid.token',
+              client_uuid: 'uuid-qr-1',
+            },
+            'volunteer-1',
+          ),
+        ).rejects.toMatchObject({
+          response: expect.objectContaining({
+            code: ErrorCode.IDEMPOTENCY_PAYLOAD_MISMATCH,
+          }),
+        });
+      });
+    });
+
+    describe('checkInTotp idempotency binding', () => {
+      it('returns existing record if client_uuid replay matches session, member, and actor without re-evaluating TOTP', async () => {
+        mockPrisma.attendanceSession.findUnique.mockResolvedValue(sampleSession);
+        mockPrisma.attendanceRecord.findUnique.mockResolvedValueOnce({
+          id: 'rec-totp-existing',
+          sessionId: 'session-1',
+          eventId: 'event-1',
+          subjectType: RecipientType.MEMBER,
+          subjectId: 'member-1',
+          method: AttendanceMethod.ROTATING_CODE,
+          status: AttendanceStatus.VERIFIED,
+          clientUuid: 'uuid-totp-1',
+          clientMarkedAt: new Date(),
+          verifiedAt: new Date(),
+          markedById: 'volunteer-1',
+          notes: null,
+          createdAt: new Date(),
+        });
+
+        const result = await service.checkInTotp(
+          {
+            session_id: 'session-1',
+            totp_code: '000000',
+            member_id: 'member-1',
+            client_uuid: 'uuid-totp-1',
+          },
+          'volunteer-1',
+        );
+
+        expect(result.id).toBe('rec-totp-existing');
+      });
+
+      it('rejects with IDEMPOTENCY_PAYLOAD_MISMATCH if client_uuid belongs to a different member or actor', async () => {
+        mockPrisma.attendanceSession.findUnique.mockResolvedValue(sampleSession);
+        mockPrisma.attendanceRecord.findUnique.mockResolvedValueOnce({
+          id: 'rec-totp-existing',
+          sessionId: 'session-1',
+          subjectId: 'other-member',
+          markedById: 'volunteer-1',
+        });
+
+        await expect(
+          service.checkInTotp(
+            {
+              session_id: 'session-1',
+              totp_code: '123456',
+              member_id: 'member-1',
+              client_uuid: 'uuid-totp-1',
+            },
+            'volunteer-1',
+          ),
+        ).rejects.toMatchObject({
+          response: expect.objectContaining({
+            code: ErrorCode.IDEMPOTENCY_PAYLOAD_MISMATCH,
+          }),
+        });
+      });
+    });
+
+    describe('checkInManual idempotency binding', () => {
+      it('returns existing record if client_uuid replay matches session, member, and actor', async () => {
+        mockPrisma.attendanceSession.findUnique.mockResolvedValue(sampleSession);
+        mockPrisma.attendanceRecord.findUnique.mockResolvedValueOnce({
+          id: 'rec-man-existing',
+          sessionId: 'session-1',
+          eventId: 'event-1',
+          subjectType: RecipientType.MEMBER,
+          subjectId: 'member-1',
+          method: AttendanceMethod.MANUAL,
+          status: AttendanceStatus.VERIFIED,
+          clientUuid: 'uuid-man-1',
+          clientMarkedAt: new Date(),
+          verifiedAt: new Date(),
+          markedById: 'volunteer-1',
+          notes: 'Previously marked note',
+          createdAt: new Date(),
+        });
+
+        const result = await service.checkInManual(
+          {
+            session_id: 'session-1',
+            member_id: 'member-1',
+            notes: 'Any note on retry',
+            client_uuid: 'uuid-man-1',
+          },
+          'volunteer-1',
+        );
+
+        expect(result.id).toBe('rec-man-existing');
+        expect(result.notes).toBe('Previously marked note');
+      });
+
+      it('rejects with IDEMPOTENCY_PAYLOAD_MISMATCH if client_uuid was marked by a different actor', async () => {
+        mockPrisma.attendanceSession.findUnique.mockResolvedValue(sampleSession);
+        mockPrisma.attendanceRecord.findUnique.mockResolvedValueOnce({
+          id: 'rec-man-existing',
+          sessionId: 'session-1',
+          subjectId: 'member-1',
+          markedById: 'different-actor',
+        });
+
+        await expect(
+          service.checkInManual(
+            {
+              session_id: 'session-1',
+              member_id: 'member-1',
+              notes: 'Manual check note',
+              client_uuid: 'uuid-man-1',
+            },
+            'volunteer-1',
+          ),
+        ).rejects.toMatchObject({
+          response: expect.objectContaining({
+            code: ErrorCode.IDEMPOTENCY_PAYLOAD_MISMATCH,
+          }),
+        });
+      });
+    });
+
+    describe('syncOfflineOperations idempotency binding', () => {
+      it('accepts idempotent replay if client_uuid matches session, member, and actor', async () => {
+        mockPrisma.attendanceRecord.findUnique.mockResolvedValueOnce({
+          id: 'rec-offline-existing',
+          sessionId: 'session-1',
+          subjectId: 'member-1',
+          markedById: 'volunteer-1',
+          status: AttendanceStatus.VERIFIED,
+        });
+
+        const res = await service.syncOfflineOperations(
+          {
+            operations: [
+              {
+                client_uuid: 'uuid-offline-replay',
+                session_id: 'session-1',
+                method: AttendanceMethod.ROTATING_CODE,
+                payload: '123456',
+                member_id: 'member-1',
+                client_marked_at: new Date().toISOString(),
+              },
+            ],
+          },
+          'volunteer-1',
+        );
+
+        expect(res.results[0]?.status).toBe(AttendanceStatus.VERIFIED);
+        expect(res.results[0]?.message).toBe('Already processed (idempotent replay).');
+        expect(res.synced_count).toBe(1);
+      });
+
+      it('rejects offline sync operation if client_uuid was marked by a different actor', async () => {
+        mockPrisma.attendanceRecord.findUnique.mockResolvedValueOnce({
+          id: 'rec-offline-existing',
+          sessionId: 'session-1',
+          subjectId: 'member-1',
+          markedById: 'actor-A',
+          status: AttendanceStatus.VERIFIED,
+        });
+
+        const res = await service.syncOfflineOperations(
+          {
+            operations: [
+              {
+                client_uuid: 'uuid-offline-actor-mismatch',
+                session_id: 'session-1',
+                method: AttendanceMethod.ROTATING_CODE,
+                payload: '123456',
+                member_id: 'member-1',
+                client_marked_at: new Date().toISOString(),
+              },
+            ],
+          },
+          'actor-B',
+        );
+
+        expect(res.results[0]?.status).toBe(AttendanceStatus.REJECTED);
+        expect(res.results[0]?.message).toContain('already processed with a different session, member, or actor');
+        expect(res.rejected_count).toBe(1);
+      });
+
+      it('rejects offline sync operation if client_uuid belongs to a different session or member', async () => {
+        mockPrisma.attendanceRecord.findUnique.mockResolvedValueOnce({
+          id: 'rec-offline-existing',
+          sessionId: 'session-DIFFERENT',
+          subjectId: 'member-1',
+          markedById: 'volunteer-1',
+          status: AttendanceStatus.VERIFIED,
+        });
+
+        const res = await service.syncOfflineOperations(
+          {
+            operations: [
+              {
+                client_uuid: 'uuid-offline-session-mismatch',
+                session_id: 'session-1',
+                method: AttendanceMethod.ROTATING_CODE,
+                payload: '123456',
+                member_id: 'member-1',
+                client_marked_at: new Date().toISOString(),
+              },
+            ],
+          },
+          'volunteer-1',
+        );
+
+        expect(res.results[0]?.status).toBe(AttendanceStatus.REJECTED);
+        expect(res.results[0]?.message).toContain('already processed with a different session, member, or actor');
+        expect(res.rejected_count).toBe(1);
+      });
     });
   });
 });

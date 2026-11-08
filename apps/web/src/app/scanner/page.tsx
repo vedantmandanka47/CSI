@@ -222,6 +222,7 @@ export default function VolunteerScannerPage() {
       setFeedback(null);
 
       const clientUuid = crypto.randomUUID();
+      const clientMarkedAt = new Date().toISOString();
 
       if (!isOnline) {
         // Store in IndexedDB
@@ -231,6 +232,8 @@ export default function VolunteerScannerPage() {
               session_id: selectedSessionId,
               method: AttendanceMethod.QR_SCAN,
               payload: token,
+              client_uuid: clientUuid,
+              client_marked_at: clientMarkedAt,
             },
             user?.id,
           );
@@ -259,6 +262,7 @@ export default function VolunteerScannerPage() {
           session_id: selectedSessionId,
           qr_token: token,
           client_uuid: clientUuid,
+          client_marked_at: clientMarkedAt,
         });
 
         setFeedback({
@@ -275,19 +279,21 @@ export default function VolunteerScannerPage() {
             message: err.message,
           });
         } else {
-          // Fallback to queue if network dropped mid-request
+          // Fallback to queue if network dropped mid-request (TASK-026 / F44: preserve clientUuid)
           await enqueueOfflineOperation(
             {
               session_id: selectedSessionId,
               method: AttendanceMethod.QR_SCAN,
               payload: token,
+              client_uuid: clientUuid,
+              client_marked_at: clientMarkedAt,
             },
             user?.id,
           );
           setFeedback({
             type: 'warning',
             title: 'Network Interrupted — Queued Locally',
-            message: 'Saved to IndexedDB offline queue.',
+            message: `Saved to IndexedDB offline queue (${clientUuid.slice(0, 8)}). Will auto-sync when online.`,
           });
           setQrTokenInput('');
           await refreshQueue();
@@ -459,6 +465,7 @@ export default function VolunteerScannerPage() {
     setProcessing(true);
     setFeedback(null);
     const clientUuid = crypto.randomUUID();
+    const clientMarkedAt = new Date().toISOString();
 
     if (!isOnline) {
       await enqueueOfflineOperation(
@@ -467,13 +474,15 @@ export default function VolunteerScannerPage() {
           method: AttendanceMethod.ROTATING_CODE,
           payload: totpCodeInput.trim(),
           member_id: memberIdInput.trim(),
+          client_uuid: clientUuid,
+          client_marked_at: clientMarkedAt,
         },
         user?.id,
       );
       setFeedback({
         type: 'warning',
         title: 'Queued Offline (IndexedDB)',
-        message: 'Saved 6-digit code check-in locally.',
+        message: `Saved 6-digit code check-in locally (${clientUuid.slice(0, 8)}). Will auto-sync when online.`,
       });
       setTotpCodeInput('');
       setMemberIdInput('');
@@ -488,6 +497,7 @@ export default function VolunteerScannerPage() {
         totp_code: totpCodeInput.trim(),
         member_id: memberIdInput.trim(),
         client_uuid: clientUuid,
+        client_marked_at: clientMarkedAt,
       });
 
       setFeedback({
@@ -501,7 +511,26 @@ export default function VolunteerScannerPage() {
       if (err instanceof ApiError) {
         setFeedback({ type: 'error', title: err.code, message: err.message });
       } else {
-        setFeedback({ type: 'error', title: 'Error', message: 'Failed to verify TOTP code.' });
+        // Fallback to queue if network dropped mid-request (TASK-026 / F44: preserve clientUuid)
+        await enqueueOfflineOperation(
+          {
+            session_id: selectedSessionId,
+            method: AttendanceMethod.ROTATING_CODE,
+            payload: totpCodeInput.trim(),
+            member_id: memberIdInput.trim(),
+            client_uuid: clientUuid,
+            client_marked_at: clientMarkedAt,
+          },
+          user?.id,
+        );
+        setFeedback({
+          type: 'warning',
+          title: 'Network Interrupted — Queued Locally',
+          message: `Saved 6-digit code check-in locally (${clientUuid.slice(0, 8)}). Will auto-sync when online.`,
+        });
+        setTotpCodeInput('');
+        setMemberIdInput('');
+        await refreshQueue();
       }
     } finally {
       setProcessing(false);
@@ -542,7 +571,26 @@ export default function VolunteerScannerPage() {
       if (err instanceof ApiError) {
         setFeedback({ type: 'error', title: err.code, message: err.message });
       } else {
-        setFeedback({ type: 'error', title: 'Error', message: 'Manual override failed.' });
+        // Fallback to queue if network dropped mid-request (TASK-026 / F44: preserve clientUuid)
+        await enqueueOfflineOperation(
+          {
+            session_id: selectedSessionId,
+            method: AttendanceMethod.MANUAL,
+            payload: memberIdInput.trim(),
+            member_id: memberIdInput.trim(),
+            notes: manualNotes.trim(),
+            client_uuid: clientUuid,
+          },
+          user?.id,
+        );
+        setFeedback({
+          type: 'warning',
+          title: 'Network Interrupted — Queued Locally',
+          message: `Saved manual check-in locally (${clientUuid.slice(0, 8)}). Will auto-sync when online.`,
+        });
+        setMemberIdInput('');
+        setManualNotes('');
+        await refreshQueue();
       }
     } finally {
       setProcessing(false);

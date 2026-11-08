@@ -26,7 +26,7 @@ This document is the unified, authoritative remediation master plan for the CSI 
 | **Phase 0** | Critical Account & Authentication Blockers | 6 | 6 | 0 | 0 |
 | **Phase 1** | Build Pipeline, Toolchain & Runtime Initialization | 5 | 5 | 0 | 0 |
 | **Phase 2** | Core Domain Logic, Event Capacities & Role Boundaries | 8 | 8 | 0 | 0 |
-| **Phase 3** | Attendance, Offline Sync & Scanner System | 7 | 0 | 0 | 7 |
+| **Phase 3** | Attendance, Offline Sync & Scanner System | 7 | 7 | 0 | 0 |
 | **Phase 4** | Document Engine, Batch Processing & File Storage Durability | 9 | 0 | 0 | 9 |
 | **Phase 5** | Annual Rollover, Checklists, Workspaces & Transactions | 5 | 0 | 0 | 5 |
 | **Phase 6** | Privacy, Data Protection, DPDP & Retention System | 4 | 1 | 0 | 3 |
@@ -34,7 +34,7 @@ This document is the unified, authoritative remediation master plan for the CSI 
 | **Phase 8** | Database, Disaster Recovery, Backup & Archive Safety | 7 | 4 | 1 | 2 |
 | **Phase 9** | API Validation, Error Handling, Client Resilience & E2E | 4 | 0 | 0 | 4 |
 | **Phase 10** | Production Operations, Deployment Recipes & Documentation | 5 | 0 | 0 | 5 |
-| **TOTAL** | **Comprehensive Full-Platform Remediation** | **66** | **24** | **0** | **42** |
+| **TOTAL** | **Comprehensive Full-Platform Remediation** | **66** | **31** | **0** | **35** |
 
 ---
 
@@ -573,10 +573,22 @@ This document is the unified, authoritative remediation master plan for the CSI 
     2. Clear or quarantine pending records on logout.
     3. Await transaction completion before reporting enqueue success.
 
-- [ ] **TASK-026 [MEDIUM] [F44]: Bind Attendance Idempotency Keys to Actor, Session & Payload**
+- [x] **TASK-026 [MEDIUM] [F44]: Bind Attendance Idempotency Keys to Actor, Session & Payload**
   - **Severity:** Medium (Idempotency Collision)
+  - **Completed:**
+    - Added `IDEMPOTENCY_PAYLOAD_MISMATCH` to `ErrorCode` in `packages/shared/src/errors/error-codes.ts`.
+    - Bound attendance idempotency verification in `AttendanceService.checkInQr`, `checkInTotp`, and `checkInManual` to strictly assert that replayed `client_uuid` records match the active session (`sessionId === session.id`), the attendee identity (`subjectId === memberId`), and the authorized scanner actor (`markedById === markedById`). Any mismatch throws `BadRequestException` (`IDEMPOTENCY_PAYLOAD_MISMATCH`).
+    - Bound offline batch synchronization in `AttendanceService.syncOfflineOperations` to verify session, attendee, and actor equality before reporting an idempotent replay, rejecting mismatched payloads with `AttendanceStatus.REJECTED`.
+    - Updated `apps/web/src/lib/offline-queue.ts` (`enqueueOfflineOperation`) to accept and preserve caller-supplied `client_uuid` and `client_marked_at`, and extract `member_id` from parsed QR pass tokens.
+    - Updated `apps/web/src/app/scanner/page.tsx` to preserve `clientUuid` across online submission and offline fallback in QR, TOTP, and Manual check-in, preventing duplicate conflict creation when recovering from network interruptions.
+    - Added comprehensive unit test suites in `tests/unit/api/modules/attendance/attendance.service.spec.ts` (36/36 passed) and `tests/unit/web/offline-queue.spec.ts` (19/19 passed) asserting payload binding, actor mismatch rejection, and retry idempotency preservation. Monorepo tests (663/663) and live DB E2E tests (190/190) all 100% passing.
   - **Affected Files:**
+    - `packages/shared/src/errors/error-codes.ts`
     - `apps/api/src/modules/attendance/attendance.service.ts`
+    - `apps/web/src/lib/offline-queue.ts`
+    - `apps/web/src/app/scanner/page.tsx`
+    - `tests/unit/api/modules/attendance/attendance.service.spec.ts`
+    - `tests/unit/web/offline-queue.spec.ts`
   - **Problem:** `client_uuid` lookups return existing records without checking if the actor, session, and member match. Scanner fallback generates a new UUID instead of preserving the original request ID.
   - **Remediation Plan:**
     1. Ensure idempotency keys are composite or checked against `(actor_id, session_id, member_id)`.

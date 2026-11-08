@@ -595,4 +595,47 @@ describe('Offline Attendance Queue (IndexedDB) & Sync Reconciliation (TASK-021 /
       setCurrentQueueUserId(null);
     });
   });
+
+  describe('Idempotency Key Preservation (TASK-026 / F44)', () => {
+    it('preserves caller-supplied client_uuid and client_marked_at on network retry fallback', async () => {
+      const explicitUuid = '11111111-2222-3333-4444-555555555555';
+      const explicitMarkedAt = '2026-11-08T10:00:00.000Z';
+
+      const item = await enqueueOfflineOperation(
+        {
+          session_id: 'session-idempotent',
+          method: AttendanceMethod.QR_SCAN,
+          payload: 'token-payload',
+          client_uuid: explicitUuid,
+          client_marked_at: explicitMarkedAt,
+        },
+        'user-retry',
+      );
+
+      expect(item.client_uuid).toBe(explicitUuid);
+      expect(item.client_marked_at).toBe(explicitMarkedAt);
+      expect(mockStore.has(explicitUuid)).toBe(true);
+    });
+
+    it('extracts member_id from valid QR pass payload during offline enqueue if not provided', async () => {
+      const nowSec = Math.floor(Date.now() / 1000);
+      const payloadObj = {
+        sub: 'extracted-member-123',
+        exp: nowSec + 300,
+        iat: nowSec,
+      };
+      const validQrToken = `csi_pass.${Buffer.from(JSON.stringify(payloadObj)).toString('base64url')}.mockSignature`;
+
+      const item = await enqueueOfflineOperation(
+        {
+          session_id: 'session-extract',
+          method: AttendanceMethod.QR_SCAN,
+          payload: validQrToken,
+        },
+        'user-scanner',
+      );
+
+      expect(item.member_id).toBe('extracted-member-123');
+    });
+  });
 });

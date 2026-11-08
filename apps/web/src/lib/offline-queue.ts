@@ -119,9 +119,14 @@ export function decodeQrPassPayload(
  * Awaits transaction completion (tx.oncomplete) before resolving for durability (TASK-025 / F43).
  */
 export async function enqueueOfflineOperation(
-  data: Omit<AttendanceSyncOperationInput, 'client_uuid' | 'client_marked_at'>,
+  data: Omit<AttendanceSyncOperationInput, 'client_uuid' | 'client_marked_at'> & {
+    client_uuid?: string;
+    client_marked_at?: string;
+  },
   userId?: string,
 ): Promise<QueuedAttendanceOperation> {
+  let resolvedMemberId = data.member_id;
+
   // Pre-flight check: If QR scan, reject if the pass was already expired at capture time
   if (data.method === AttendanceMethod.QR_SCAN && data.payload) {
     const parsed = decodeQrPassPayload(data.payload);
@@ -130,16 +135,21 @@ export async function enqueueOfflineOperation(
       if (nowSec > parsed.exp + 30) {
         throw new Error('QR pass is already expired. Please ask the attendee to refresh their digital card.');
       }
+      const extractedSub = parsed.sub || (parsed as unknown as { user_id?: string }).user_id;
+      if (!resolvedMemberId && extractedSub) {
+        resolvedMemberId = extractedSub;
+      }
     }
   }
 
   const db = await openDb();
-  const clientUuid = crypto.randomUUID();
-  const nowIso = new Date().toISOString();
+  const clientUuid = data.client_uuid || crypto.randomUUID();
+  const nowIso = data.client_marked_at || new Date().toISOString();
   const effectiveUserId = resolveEffectiveUserId(userId);
 
   const item: QueuedAttendanceOperation = {
     ...data,
+    member_id: resolvedMemberId,
     client_uuid: clientUuid,
     client_marked_at: nowIso,
     created_at_local: nowIso,

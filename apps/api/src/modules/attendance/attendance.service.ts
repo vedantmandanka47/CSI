@@ -204,7 +204,9 @@ export class AttendanceService {
     this.validateSessionBounds(session, markedAt, true);
 
     // 1. Verify cryptographic QR Pass
-    const verifyResult = await this.idCardService.verifyQrPass(input.qr_token);
+    const verifyResult = await this.idCardService.verifyQrPass(input.qr_token, {
+      captureTimestamp: input.client_marked_at,
+    });
     if (!verifyResult.valid || !verifyResult.user_id) {
       throw new BadRequestException({
         code: 'INVALID_QR_PASS',
@@ -214,7 +216,25 @@ export class AttendanceService {
 
     const memberId = verifyResult.user_id;
 
-    // 2. Centralized validation engine (session status, active user standing, audience eligibility)
+    // 2. Idempotent check by client_uuid (TASK-026 / F44)
+    const existingByClientUuid = await this.prisma.attendanceRecord.findUnique({
+      where: { clientUuid: input.client_uuid },
+    });
+    if (existingByClientUuid) {
+      if (
+        existingByClientUuid.sessionId !== session.id ||
+        existingByClientUuid.subjectId !== memberId ||
+        existingByClientUuid.markedById !== markedById
+      ) {
+        throw new BadRequestException({
+          code: ErrorCode.IDEMPOTENCY_PAYLOAD_MISMATCH,
+          message: 'Idempotency key (client_uuid) already used with a different session, member, or actor.',
+        });
+      }
+      return this.mapRecord(existingByClientUuid);
+    }
+
+    // 3. Centralized validation engine (session status, active user standing, audience eligibility)
     await this.validateAttendanceCandidate({
       session,
       memberId,
@@ -222,14 +242,6 @@ export class AttendanceService {
       markedAt,
       isOnline: true,
     });
-
-    // 3. Idempotent check by client_uuid
-    const existingByClientUuid = await this.prisma.attendanceRecord.findUnique({
-      where: { clientUuid: input.client_uuid },
-    });
-    if (existingByClientUuid) {
-      return this.mapRecord(existingByClientUuid);
-    }
 
     // 4. Duplicate check for this session
     const existingRecord = await this.prisma.attendanceRecord.findUnique({
@@ -310,9 +322,27 @@ export class AttendanceService {
       });
     }
 
-    const markedAt = new Date();
+    const markedAt = input.client_marked_at ? new Date(input.client_marked_at) : new Date();
 
-    // 1. Centralized validation engine (session status, active user standing, audience eligibility)
+    // 1. Idempotent check by client_uuid (TASK-026 / F44)
+    const existingByClientUuid = await this.prisma.attendanceRecord.findUnique({
+      where: { clientUuid: input.client_uuid },
+    });
+    if (existingByClientUuid) {
+      if (
+        existingByClientUuid.sessionId !== session.id ||
+        existingByClientUuid.subjectId !== input.member_id ||
+        existingByClientUuid.markedById !== markedById
+      ) {
+        throw new BadRequestException({
+          code: ErrorCode.IDEMPOTENCY_PAYLOAD_MISMATCH,
+          message: 'Idempotency key (client_uuid) already used with a different session, member, or actor.',
+        });
+      }
+      return this.mapRecord(existingByClientUuid);
+    }
+
+    // 2. Centralized validation engine (session status, active user standing, audience eligibility)
     await this.validateAttendanceCandidate({
       session,
       memberId: input.member_id,
@@ -321,7 +351,7 @@ export class AttendanceService {
       isOnline: true,
     });
 
-    // 2. Verify TOTP code (accept current step +/- 1 step)
+    // 3. Verify TOTP code (accept current step +/- 1 step)
     const plainSecret = decryptAes256Gcm(session.totpSecret, env.APP_ENCRYPTION_KEY);
     const isCodeValid = verifyTotp(
       input.totp_code,
@@ -335,14 +365,6 @@ export class AttendanceService {
         code: 'INVALID_TOTP_CODE',
         message: 'Invalid or expired 6-digit attendance code.',
       });
-    }
-
-    // 4. Idempotent check by client_uuid
-    const existingByClientUuid = await this.prisma.attendanceRecord.findUnique({
-      where: { clientUuid: input.client_uuid },
-    });
-    if (existingByClientUuid) {
-      return this.mapRecord(existingByClientUuid);
     }
 
     // 5. Duplicate check
@@ -425,7 +447,25 @@ export class AttendanceService {
 
     const markedAt = new Date();
 
-    // 1. Centralized validation engine (session status, active user standing, audience eligibility, manual notes)
+    // 1. Idempotent check by client_uuid (TASK-026 / F44)
+    const existingByClientUuid = await this.prisma.attendanceRecord.findUnique({
+      where: { clientUuid: input.client_uuid },
+    });
+    if (existingByClientUuid) {
+      if (
+        existingByClientUuid.sessionId !== session.id ||
+        existingByClientUuid.subjectId !== input.member_id ||
+        existingByClientUuid.markedById !== markedById
+      ) {
+        throw new BadRequestException({
+          code: ErrorCode.IDEMPOTENCY_PAYLOAD_MISMATCH,
+          message: 'Idempotency key (client_uuid) already used with a different session, member, or actor.',
+        });
+      }
+      return this.mapRecord(existingByClientUuid);
+    }
+
+    // 2. Centralized validation engine (session status, active user standing, audience eligibility, manual notes)
     await this.validateAttendanceCandidate({
       session,
       memberId: input.member_id,
@@ -434,14 +474,6 @@ export class AttendanceService {
       isOnline: true,
       notes: input.notes,
     });
-
-    // Idempotent check
-    const existingByClientUuid = await this.prisma.attendanceRecord.findUnique({
-      where: { clientUuid: input.client_uuid },
-    });
-    if (existingByClientUuid) {
-      return this.mapRecord(existingByClientUuid);
-    }
 
     // Duplicate check
     const existingRecord = await this.prisma.attendanceRecord.findUnique({
@@ -520,12 +552,48 @@ export class AttendanceService {
 
     for (const op of input.operations) {
       try {
-        // 1. Idempotency: has this client_uuid already been processed?
+        const clientMarkedAt = new Date(op.client_marked_at);
+        const now = new Date();
+
+        // 1. Idempotency: has this client_uuid already been processed? (TASK-026 / F44)
         const existing = await this.prisma.attendanceRecord.findUnique({
           where: { clientUuid: op.client_uuid },
         });
 
         if (existing) {
+          let memberMatches = true;
+          if (op.member_id) {
+            memberMatches = existing.subjectId === op.member_id;
+          } else if (op.method === AttendanceMethod.QR_SCAN && op.payload) {
+            try {
+              const qrRes = await this.idCardService.verifyQrPass(op.payload, {
+                captureTimestamp: clientMarkedAt,
+                maxSyncWindowSec: 24 * 3600,
+              });
+              if (qrRes.valid && qrRes.user_id) {
+                memberMatches = existing.subjectId === qrRes.user_id;
+              } else {
+                memberMatches = false;
+              }
+            } catch {
+              memberMatches = false;
+            }
+          }
+
+          const sessionMatches = existing.sessionId === op.session_id;
+          const actorMatches = existing.markedById === markedById;
+
+          if (!sessionMatches || !actorMatches || !memberMatches) {
+            results.push({
+              client_uuid: op.client_uuid,
+              status: AttendanceStatus.REJECTED,
+              message: 'Idempotency key (client_uuid) already processed with a different session, member, or actor.',
+              record_id: existing.id,
+            });
+            rejectedCount++;
+            continue;
+          }
+
           results.push({
             client_uuid: op.client_uuid,
             status: existing.status as AttendanceStatus,
@@ -552,9 +620,6 @@ export class AttendanceService {
           rejectedCount++;
           continue;
         }
-
-        const clientMarkedAt = new Date(op.client_marked_at);
-        const now = new Date();
 
         // 3. Clock skew verification (flag if client marked at > 24 hours drift)
         const diffMs = Math.abs(now.getTime() - clientMarkedAt.getTime());
