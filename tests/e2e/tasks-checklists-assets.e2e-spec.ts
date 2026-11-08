@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import cookieParser from 'cookie-parser';
+import express from 'express';
 import { AppModule } from '../../apps/api/src/app.module.js';
 import { PrismaService } from '../../apps/api/src/infra/prisma/prisma.service.js';
 import { hashPassword, generateSecureToken, hashToken } from '../../apps/api/src/common/crypto/tokens.js';
@@ -36,9 +37,11 @@ describe('Tasks, Checklists & Asset Workflows (E2E) (M16)', () => {
       imports: [AppModule],
     }).compile();
 
-    app = moduleFixture.createNestApplication();
+    app = moduleFixture.createNestApplication({ bodyParser: false });
     app.setGlobalPrefix('api');
     app.use(cookieParser());
+    app.use(express.json({ limit: '15mb' }));
+    app.use(express.urlencoded({ extended: true, limit: '15mb' }));
     await app.init();
 
     prisma = app.get(PrismaService);
@@ -490,6 +493,47 @@ describe('Tasks, Checklists & Asset Workflows (E2E) (M16)', () => {
 
       expect(res.status).toBe(400);
       expect(res.body.error.code).toBe(ErrorCode.ASSET_INVALID_TYPE);
+    });
+
+    it('should successfully upload an asset exceeding default 100 KB body limit (TASK-019 / B11 / HR-009)', async () => {
+      // 200 KB text asset
+      const largeContent = '# Technical Documentation\n' + 'A'.repeat(200 * 1024);
+      const largeBase64 = Buffer.from(largeContent).toString('base64');
+
+      const res = await request(app.getHttpServer())
+        .post('/api/workspaces/technical/assets')
+        .set('Cookie', [techMemberCookie, csrfCookie])
+        .set('X-CSRF-Token', csrfToken)
+        .send({
+          title: 'Large 200KB Documentation',
+          fileName: 'large-docs.md',
+          category: AssetCategory.DOCUMENT,
+          fileBase64: largeBase64,
+        });
+
+      expect(res.status).toBe(201);
+      expect(res.body.title).toBe('Large 200KB Documentation');
+      expect(res.body.fileSizeBytes).toBeGreaterThan(200 * 1024);
+    });
+
+    it('should reject asset upload exceeding 10 MB decoded limit with 400 (TASK-019 / B11 / HR-009)', async () => {
+      // 10.1 MB buffer in base64
+      const oversizedBuffer = Buffer.alloc(Math.floor(10.1 * 1024 * 1024), 'z');
+      const oversizedBase64 = oversizedBuffer.toString('base64');
+
+      const res = await request(app.getHttpServer())
+        .post('/api/workspaces/technical/assets')
+        .set('Cookie', [techMemberCookie, csrfCookie])
+        .set('X-CSRF-Token', csrfToken)
+        .send({
+          title: 'Oversized 10.1MB Asset',
+          fileName: 'oversized.txt',
+          category: AssetCategory.DOCUMENT,
+          fileBase64: oversizedBase64,
+        });
+
+      expect(res.status).toBe(400);
+      expect(res.body.error.code).toBe(ErrorCode.VALIDATION_ERROR);
     });
   });
 

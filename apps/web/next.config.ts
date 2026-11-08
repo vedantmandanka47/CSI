@@ -53,6 +53,26 @@ const nextConfig: NextConfig = {
           },
         ],
       },
+      {
+        // TASK-020 / B09 / F14 / HR-003: Scope Permissions-Policy to permit camera=(self) specifically for /scanner
+        source: '/scanner',
+        headers: [
+          {
+            key: 'Permissions-Policy',
+            value: 'camera=(self), microphone=(), geolocation=()',
+          },
+        ],
+      },
+      {
+        // TASK-020 / B09 / F14 / HR-003: Scope Permissions-Policy to permit camera=(self) specifically for /scanner/:path*
+        source: '/scanner/:path*',
+        headers: [
+          {
+            key: 'Permissions-Policy',
+            value: 'camera=(self), microphone=(), geolocation=()',
+          },
+        ],
+      },
     ];
   },
 };

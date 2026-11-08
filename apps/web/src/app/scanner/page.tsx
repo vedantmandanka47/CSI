@@ -1,7 +1,8 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import Link from 'next/link';
+import { Html5Qrcode, Html5QrcodeScannerState } from 'html5-qrcode';
 import { useAuth } from '@/components/auth-context';
 import { apiClient, ApiError } from '@/lib/api-client';
 import {
@@ -33,6 +34,9 @@ import {
   Layers,
   ArrowLeft,
   Camera,
+  CameraOff,
+  SwitchCamera,
+  Keyboard,
   Trash2,
 } from 'lucide-react';
 
@@ -67,8 +71,38 @@ export default function VolunteerScannerPage() {
   const [queuedItems, setQueuedItems] = useState<QueuedAttendanceOperation[]>([]);
   const [showQueueDrawer, setShowQueueDrawer] = useState(false);
 
-  // Camera mock/viewfinder state
+  // Camera optical scanner state (TASK-020 / B09 / F14 / HR-003)
   const [cameraActive, setCameraActive] = useState(false);
+  const [cameraLoading, setCameraLoading] = useState(false);
+  const [cameraError, setCameraError] = useState<string | null>(null);
+  const [availableCameras, setAvailableCameras] = useState<Array<{ id: string; label: string }>>([]);
+  const [selectedCameraId, setSelectedCameraId] = useState<string>('');
+  const scannerRef = useRef<Html5Qrcode | null>(null);
+  const lastScannedRef = useRef<{ code: string; timestamp: number } | null>(null);
+
+  // Audio feedback helper (Web Audio API)
+  const playBeep = useCallback(() => {
+    try {
+      if (typeof window === 'undefined') return;
+      const AudioContextClass =
+        window.AudioContext ||
+        (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+      if (!AudioContextClass) return;
+      const audioCtx = new AudioContextClass();
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(880, audioCtx.currentTime);
+      gain.gain.setValueAtTime(0.12, audioCtx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.12);
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+      osc.start();
+      osc.stop(audioCtx.currentTime + 0.12);
+    } catch {
+      // AudioContext unavailable or restricted
+    }
+  }, []);
 
   const isAuthorized =
     user &&
@@ -170,89 +204,239 @@ export default function VolunteerScannerPage() {
     }
   };
 
-  // QR Check-In Submission
-  const handleQrSubmit = async () => {
-    if (!selectedSessionId || !qrTokenInput.trim()) {
-      setFeedback({
-        type: 'error',
-        title: 'Input Missing',
-        message: 'Please select a session and provide a member QR token.',
-      });
-      return;
-    }
-
-    setProcessing(true);
-    setFeedback(null);
-
-    const clientUuid = crypto.randomUUID();
-
-    if (!isOnline) {
-      // Store in IndexedDB
-      try {
-        await enqueueOfflineOperation({
-          session_id: selectedSessionId,
-          method: AttendanceMethod.QR_SCAN,
-          payload: qrTokenInput.trim(),
-        });
-        setFeedback({
-          type: 'warning',
-          title: 'Queued Offline (IndexedDB)',
-          message: `Device is offline. Check-in queued locally (${clientUuid.slice(0, 8)}). Will auto-sync when online.`,
-        });
-        setQrTokenInput('');
-        await refreshQueue();
-      } catch (err: unknown) {
+  // QR Check-In Submission (Online API or Offline IndexedDB Queue)
+  const handleQrSubmit = useCallback(
+    async (explicitToken?: string) => {
+      const token = (explicitToken ?? qrTokenInput).trim();
+      if (!selectedSessionId || !token) {
         setFeedback({
           type: 'error',
-          title: 'Queue Failed',
-          message: err instanceof Error ? err.message : 'Could not write to local IndexedDB store.',
+          title: 'Input Missing',
+          message: 'Please select a session and provide a member QR token.',
         });
+        return;
+      }
+
+      setProcessing(true);
+      setFeedback(null);
+
+      const clientUuid = crypto.randomUUID();
+
+      if (!isOnline) {
+        // Store in IndexedDB
+        try {
+          await enqueueOfflineOperation({
+            session_id: selectedSessionId,
+            method: AttendanceMethod.QR_SCAN,
+            payload: token,
+          });
+          setFeedback({
+            type: 'warning',
+            title: 'Queued Offline (IndexedDB)',
+            message: `Device is offline. Check-in queued locally (${clientUuid.slice(0, 8)}). Will auto-sync when online.`,
+          });
+          setQrTokenInput('');
+          await refreshQueue();
+        } catch (err: unknown) {
+          setFeedback({
+            type: 'error',
+            title: 'Queue Failed',
+            message: err instanceof Error ? err.message : 'Could not write to local IndexedDB store.',
+          });
+        } finally {
+          setProcessing(false);
+        }
+        return;
+      }
+
+      // Online verification
+      try {
+        const res = await apiClient.post<{ data: AttendanceRecord }>('/attendance/check-in/qr', {
+          session_id: selectedSessionId,
+          qr_token: token,
+          client_uuid: clientUuid,
+        });
+
+        setFeedback({
+          type: 'success',
+          title: 'Check-In Verified',
+          message: `Verified Active Student Attendance (${res.data.id.slice(0, 8)}).`,
+        });
+        setQrTokenInput('');
+      } catch (err: unknown) {
+        if (err instanceof ApiError) {
+          setFeedback({
+            type: 'error',
+            title: err.code,
+            message: err.message,
+          });
+        } else {
+          // Fallback to queue if network dropped mid-request
+          await enqueueOfflineOperation({
+            session_id: selectedSessionId,
+            method: AttendanceMethod.QR_SCAN,
+            payload: token,
+          });
+          setFeedback({
+            type: 'warning',
+            title: 'Network Interrupted — Queued Locally',
+            message: 'Saved to IndexedDB offline queue.',
+          });
+          setQrTokenInput('');
+          await refreshQueue();
+        }
       } finally {
         setProcessing(false);
       }
-      return;
-    }
+    },
+    [isOnline, qrTokenInput, refreshQueue, selectedSessionId],
+  );
 
-    // Online verification
-    try {
-      const res = await apiClient.post<{ data: AttendanceRecord }>('/attendance/check-in/qr', {
-        session_id: selectedSessionId,
-        qr_token: qrTokenInput.trim(),
-        client_uuid: clientUuid,
-      });
-
-      setFeedback({
-        type: 'success',
-        title: 'Check-In Verified',
-        message: `Verified Active Student Attendance (${res.data.id.slice(0, 8)}).`,
-      });
-      setQrTokenInput('');
-    } catch (err: unknown) {
-      if (err instanceof ApiError) {
-        setFeedback({
-          type: 'error',
-          title: err.code,
-          message: err.message,
-        });
-      } else {
-        // Fallback to queue if network dropped mid-request
-        await enqueueOfflineOperation({
-          session_id: selectedSessionId,
-          method: AttendanceMethod.QR_SCAN,
-          payload: qrTokenInput.trim(),
-        });
-        setFeedback({
-          type: 'warning',
-          title: 'Network Interrupted — Queued Locally',
-          message: 'Saved to IndexedDB offline queue.',
-        });
-        setQrTokenInput('');
-        await refreshQueue();
+  const stopScanner = useCallback(async () => {
+    if (scannerRef.current) {
+      try {
+        if (scannerRef.current.getState() === Html5QrcodeScannerState.SCANNING) {
+          await scannerRef.current.stop();
+        }
+        scannerRef.current.clear();
+      } catch {
+        // ignore
       }
-    } finally {
-      setProcessing(false);
+      scannerRef.current = null;
     }
-  };
+    setCameraActive(false);
+    setCameraLoading(false);
+  }, []);
+
+  const startScanner = useCallback(
+    async (cameraIdToUse?: string) => {
+      setCameraLoading(true);
+      setCameraError(null);
+
+      try {
+        if (typeof window === 'undefined' || !navigator?.mediaDevices?.getUserMedia) {
+          throw new Error(
+            'Camera streaming is not supported by your browser environment. Use manual entry or a barcode scanner.',
+          );
+        }
+
+        // Cleanup any active instance before re-initializing
+        if (scannerRef.current) {
+          try {
+            if (scannerRef.current.getState() === Html5QrcodeScannerState.SCANNING) {
+              await scannerRef.current.stop();
+            }
+            scannerRef.current.clear();
+          } catch {
+            // ignore
+          }
+          scannerRef.current = null;
+        }
+
+        const scanner = new Html5Qrcode('qr-reader');
+        scannerRef.current = scanner;
+
+        const activeCameraId = cameraIdToUse || selectedCameraId;
+        const cameraConfig = activeCameraId ? activeCameraId : { facingMode: 'environment' };
+
+        await scanner.start(
+          cameraConfig,
+          {
+            fps: 10,
+            qrbox: (viewfinderWidth: number, viewfinderHeight: number) => {
+              const minEdge = Math.min(viewfinderWidth, viewfinderHeight);
+              const edgeSize = Math.max(160, Math.floor(minEdge * 0.72));
+              return { width: edgeSize, height: edgeSize };
+            },
+            aspectRatio: 1.0,
+          },
+          (decodedText: string) => {
+            const now = Date.now();
+            if (
+              lastScannedRef.current &&
+              lastScannedRef.current.code === decodedText &&
+              now - lastScannedRef.current.timestamp < 3500
+            ) {
+              return;
+            }
+            lastScannedRef.current = { code: decodedText, timestamp: now };
+            setQrTokenInput(decodedText);
+            playBeep();
+            void handleQrSubmit(decodedText);
+          },
+          () => {
+            // Normal scan frame tick without QR code
+          },
+        );
+
+        setCameraActive(true);
+
+        // Fetch camera devices after permission is granted
+        try {
+          const devices = await Html5Qrcode.getCameras();
+          if (devices && devices.length > 0) {
+            setAvailableCameras(
+              devices.map((d) => ({ id: d.id, label: d.label || `Camera ${d.id.slice(0, 5)}` })),
+            );
+            if (!activeCameraId) {
+              const backCam = devices.find((d) => /back|rear|environment/i.test(d.label));
+              setSelectedCameraId(backCam ? backCam.id : (devices[0]?.id ?? ''));
+            }
+          }
+        } catch {
+          // ignore
+        }
+      } catch (err: unknown) {
+        const error = err as { name?: string; message?: string };
+        let msg = 'Failed to activate camera scanner.';
+        if (error?.name === 'NotAllowedError' || error?.name === 'PermissionDeniedError') {
+          msg = 'Camera permission denied. Please allow camera access in your browser settings to scan QR passes.';
+        } else if (error?.name === 'NotFoundError' || error?.name === 'DevicesNotFoundError') {
+          msg = 'No camera hardware found on this device.';
+        } else if (error?.name === 'NotReadableError' || error?.name === 'TrackStartError') {
+          msg = 'Camera is already in use by another application or tab.';
+        } else if (error?.message) {
+          msg = error.message;
+        }
+        setCameraError(msg);
+        setCameraActive(false);
+        if (scannerRef.current) {
+          try {
+            scannerRef.current.clear();
+          } catch {
+            // ignore
+          }
+          scannerRef.current = null;
+        }
+      } finally {
+        setCameraLoading(false);
+      }
+    },
+    [handleQrSubmit, playBeep, selectedCameraId],
+  );
+
+  // Stop camera when unmounting or switching tabs
+  useEffect(() => {
+    return () => {
+      if (scannerRef.current) {
+        try {
+          if (scannerRef.current.getState() === Html5QrcodeScannerState.SCANNING) {
+            void scannerRef.current.stop();
+          }
+          scannerRef.current.clear();
+        } catch {
+          // ignore
+        }
+        scannerRef.current = null;
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (activeTab !== 'qr' && cameraActive) {
+      void stopScanner();
+    }
+  }, [activeTab, cameraActive, stopScanner]);
 
   // TOTP Check-In Submission
   const handleTotpSubmit = async () => {
@@ -529,40 +713,108 @@ export default function VolunteerScannerPage() {
         {/* TAB 1: QR PASS SCANNER */}
         {activeTab === 'qr' && (
           <div className="space-y-6">
-            <div className="rounded-lg border-2 border-dashed border-border bg-surface-raised p-8 text-center">
-              <Camera className="mx-auto h-12 w-12 text-primary" />
-              <h3 className="mt-2 font-display text-base font-bold text-text">
-                Camera / Optical Scanner
-              </h3>
-              <p className="mt-1 text-xs text-text-muted">
-                Point student screen at camera, or use Bluetooth 2D barcode handheld gun.
-              </p>
+            {/* Viewfinder & Controls Container */}
+            <div className="rounded-lg border border-border bg-surface-raised p-6 text-center">
+              {/* Camera Error Banner */}
+              {cameraError && (
+                <div className="mb-4 flex items-start gap-3 rounded-md border border-danger/30 bg-danger/10 p-3 text-left text-xs text-danger">
+                  <AlertTriangle className="h-4 w-4 flex-shrink-0 mt-0.5" />
+                  <div className="flex-1">
+                    <p className="font-semibold">Camera Access Notice</p>
+                    <p className="mt-0.5 text-text-muted">{cameraError}</p>
+                  </div>
+                </div>
+              )}
 
-              <button
-                type="button"
-                onClick={() => setCameraActive(!cameraActive)}
-                className="mt-4 rounded-md border border-border bg-surface px-4 py-2 text-xs font-semibold text-text shadow-sm hover:bg-surface-raised"
-              >
-                {cameraActive ? 'Stop Camera Stream' : 'Activate Viewfinder'}
-              </button>
+              {/* Viewfinder Container (Html5Qrcode injects video into this ID) */}
+              <div
+                id="qr-reader"
+                className={`mx-auto max-w-sm overflow-hidden rounded-xl border border-border bg-black shadow-lg transition-all ${
+                  cameraActive ? 'block aspect-square w-full' : 'hidden'
+                }`}
+              />
 
-              {cameraActive && (
-                <div className="mt-4 mx-auto max-w-sm overflow-hidden rounded-lg border border-border bg-black aspect-video flex items-center justify-center text-xs text-text-muted">
-                  <p className="text-white font-mono text-xs animate-pulse">
-                    [Viewfinder Active: Ready for Optical Scan]
+              {!cameraActive && (
+                <div className="py-6">
+                  <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-primary/10 text-primary">
+                    <Camera className="h-7 w-7" />
+                  </div>
+                  <h3 className="mt-3 font-display text-base font-bold text-text">
+                    Optical QR Pass Scanner
+                  </h3>
+                  <p className="mt-1 text-xs text-text-muted max-w-md mx-auto">
+                    Use your device camera to scan student dynamic QR passes.
+                    Workstation Permissions-Policy is configured to allow camera hardware on this route.
                   </p>
                 </div>
               )}
+
+              {/* Action Buttons & Camera Selector */}
+              <div className="mt-4 flex flex-wrap items-center justify-center gap-3">
+                {!cameraActive ? (
+                  <button
+                    type="button"
+                    onClick={() => void startScanner()}
+                    disabled={cameraLoading}
+                    className="inline-flex items-center gap-2 rounded-md bg-primary px-5 py-2.5 text-xs font-semibold text-primary-foreground shadow-sm transition-opacity hover:opacity-90 disabled:opacity-50"
+                  >
+                    <Camera className="h-4 w-4" />
+                    <span>{cameraLoading ? 'Starting Camera...' : 'Activate Camera Scanner'}</span>
+                  </button>
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => void stopScanner()}
+                      className="inline-flex items-center gap-2 rounded-md border border-border bg-surface px-4 py-2 text-xs font-semibold text-text shadow-sm hover:bg-surface-raised"
+                    >
+                      <CameraOff className="h-4 w-4 text-danger" />
+                      <span>Stop Camera</span>
+                    </button>
+
+                    {availableCameras.length > 1 && (
+                      <div className="inline-flex items-center gap-2">
+                        <SwitchCamera className="h-4 w-4 text-text-muted" />
+                        <select
+                          value={selectedCameraId}
+                          onChange={(e) => {
+                            const newId = e.target.value;
+                            setSelectedCameraId(newId);
+                            void startScanner(newId);
+                          }}
+                          className="rounded-md border border-border bg-surface px-3 py-1.5 text-xs font-medium text-text focus:border-primary focus:outline-none"
+                        >
+                          {availableCameras.map((cam) => (
+                            <option key={cam.id} value={cam.id}>
+                              {cam.label}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
             </div>
 
-            <div>
-              <label className="block text-xs font-semibold uppercase tracking-wider text-text-muted">
-                Scanned QR Pass Payload Token
-              </label>
-              <div className="mt-2 flex gap-3">
+            {/* Manual Token / Hardware Barcode Scanner Input */}
+            <div className="rounded-lg border border-border bg-surface p-5 shadow-sm">
+              <div className="flex items-center justify-between mb-2">
+                <label className="text-xs font-semibold uppercase tracking-wider text-text-muted flex items-center gap-1.5">
+                  <Keyboard className="h-3.5 w-3.5 text-primary" />
+                  <span>Manual Token or Handheld 2D Barcode Scanner</span>
+                </label>
+                <span className="text-[11px] text-text-muted">
+                  Supports USB / Bluetooth Barcode Guns
+                </span>
+              </div>
+              <p className="text-xs text-text-muted mb-3">
+                Handheld hardware scanners automatically paste tokens and submit on Enter. You can also paste tokens manually.
+              </p>
+              <div className="flex gap-3">
                 <input
                   type="text"
-                  placeholder="Paste or scan token (e.g. csi_pass.eyJ...)"
+                  placeholder="Scan or paste token (csi_pass.eyJ...)"
                   value={qrTokenInput}
                   onChange={(e) => setQrTokenInput(e.target.value)}
                   onKeyDown={(e) => {

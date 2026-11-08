@@ -25,7 +25,7 @@ This document is the unified, authoritative remediation master plan for the CSI 
 | :--- | :--- | :---: | :---: | :---: | :---: |
 | **Phase 0** | Critical Account & Authentication Blockers | 6 | 6 | 0 | 0 |
 | **Phase 1** | Build Pipeline, Toolchain & Runtime Initialization | 5 | 5 | 0 | 0 |
-| **Phase 2** | Core Domain Logic, Event Capacities & Role Boundaries | 8 | 7 | 0 | 1 |
+| **Phase 2** | Core Domain Logic, Event Capacities & Role Boundaries | 8 | 8 | 0 | 0 |
 | **Phase 3** | Attendance, Offline Sync & Scanner System | 7 | 0 | 0 | 7 |
 | **Phase 4** | Document Engine, Batch Processing & File Storage Durability | 9 | 0 | 0 | 9 |
 | **Phase 5** | Annual Rollover, Checklists, Workspaces & Transactions | 5 | 0 | 0 | 5 |
@@ -34,7 +34,7 @@ This document is the unified, authoritative remediation master plan for the CSI 
 | **Phase 8** | Database, Disaster Recovery, Backup & Archive Safety | 7 | 4 | 1 | 2 |
 | **Phase 9** | API Validation, Error Handling, Client Resilience & E2E | 4 | 0 | 0 | 4 |
 | **Phase 10** | Production Operations, Deployment Recipes & Documentation | 5 | 0 | 0 | 5 |
-| **TOTAL** | **Comprehensive Full-Platform Remediation** | **66** | **23** | **0** | **43** |
+| **TOTAL** | **Comprehensive Full-Platform Remediation** | **66** | **24** | **0** | **42** |
 
 ---
 
@@ -404,27 +404,59 @@ This document is the unified, authoritative remediation master plan for the CSI 
     3. Eliminate unconditional `is_on_roster: true` in `approveApplication` by querying academic roster.
     4. Add unit and E2E tests for signup attempts during closed drive windows.
 
-- [ ] **TASK-019 [HIGH] [B11 / HR-009 / F38]: Reconcile Asset Upload Body Parser Limit & Enforce Encoded Size Limits**
+- [x] **TASK-019 [HIGH] [B11 / HR-009 / F38]: Reconcile Asset Upload Body Parser Limit & Enforce Encoded Size Limits**
   - **Severity:** High (HTTP 413 Denial of Service / Contract Inconsistency)
+  - **Completed:**
+    - Configured `{ bodyParser: false }` on `NestFactory.create()` in `apps/api/src/main.ts`, preventing NestJS from registering its default 100 KB body parser ahead of the configured 15 MB gateway limit.
+    - Updated `apps/api/src/common/filters/global-exception.filter.ts` to cleanly catch and structure raw Express HTTP 413 `PayloadTooLargeError` payloads into standard `ErrorCode.ASSET_FILE_TOO_LARGE` envelopes.
+    - Exported `MAX_ASSET_FILE_SIZE_BYTES` (10 MB binary) and `MAX_ASSET_BASE64_LENGTH` (14 MB base64 string) from `@csi/shared`.
+    - Added fast, allocation-free `estimateBase64DecodedBytes` helper and constrained `UploadAssetSchema.fileBase64` to `MAX_ASSET_BASE64_LENGTH` and `<= 10 MB` decoded in `packages/shared/src/schemas/asset.schema.ts`.
+    - Hardened `AssetsService.parseBase64` with base64 character set validation, empty buffer checks, and size checks against `MAX_ASSET_FILE_SIZE_BYTES`.
+    - Implemented atomic transactional reconciliation in `AssetsService.uploadAsset` (HR-010) removing orphaned storage files if database creation fails.
+    - Added comprehensive unit tests in `tests/unit/shared/m16-schemas.spec.ts` asserting accepted boundary payloads (9.9 MB, 10.0 MB) and rejected payloads (10.1 MB, > 14 MB base64).
+    - Added unit tests in `tests/unit/api/modules/workspaces/assets.service.spec.ts` for oversized buffers, invalid base64, and orphaned file cleanup on database failure.
+    - Added unit test in `tests/unit/api/common/filters/global-exception.filter.spec.ts` for HTTP 413 error formatting.
+    - Added live PostgreSQL E2E integration tests in `tests/e2e/tasks-checklists-assets.e2e-spec.ts` verifying that payloads > 100 KB succeed and payloads > 10 MB are rejected with 400.
   - **Affected Files:**
     - `apps/api/src/main.ts`
-    - `packages/shared/src/schemas/asset.schema.ts`
+    - `apps/api/src/common/filters/global-exception.filter.ts`
+    - `apps/api/src/modules/workspaces/assets.service.ts`
     - `apps/api/src/modules/workspaces/workspace-asset-storage.service.ts`
-  - **Problem:** `asset.schema.ts` allows files up to 10 MB base64 in JSON, but `main.ts` does not configure a body-parser limit (NestJS defaults to 100 KB). Large uploads fail with raw 413 errors before reaching application code. Raising the global JSON limit carelessly would expose the API to memory exhaustion.
+    - `packages/shared/src/schemas/asset.schema.ts`
+    - `tests/unit/shared/m16-schemas.spec.ts`
+    - `tests/unit/api/modules/workspaces/assets.service.spec.ts`
+    - `tests/unit/api/common/filters/global-exception.filter.spec.ts`
+    - `tests/e2e/tasks-checklists-assets.e2e-spec.ts`
+  - **Problem:** `asset.schema.ts` allows files up to 10 MB base64 in JSON, but `main.ts` did not disable Nest's default 100 KB body parser. Large uploads failed with raw 413 errors before reaching application code. Base64 strings were unconstrained in schema.
   - **Remediation Plan:**
-    1. Configure an explicit, route-scoped body limit or migrate asset uploads to multipart form-data streaming (`multer`/`busboy`).
-    2. Add max length constraints to the base64 string in `asset.schema.ts`.
+    1. Configure explicit gateway limit with `bodyParser: false` in `main.ts`.
+    2. Add max length constraints and decoded size checks to the base64 string in `asset.schema.ts`.
     3. Add tests for boundary payloads (9.9 MB, 10.0 MB, 10.1 MB).
 
 ---
 
 ### Phase 3: Attendance, Offline Sync & Scanner Integrity
 
-- [ ] **TASK-020 [HIGH] [B09 / F14 / HR-003]: Scanner Reality: Implement Working HTML5/WebRTC QR Scanner & Fix Permissions-Policy**
+- [x] **TASK-020 [HIGH] [B09 / F14 / HR-003]: Scanner Reality: Implement Working HTML5/WebRTC QR Scanner & Fix Permissions-Policy**
   - **Severity:** High (Nonfunctional UI / Policy Contradiction)
+  - **Completed:**
+    - Scoped `Permissions-Policy` in `apps/web/next.config.ts` to allow `camera=(self)` specifically for `/scanner` and `/scanner/:path*` while preserving global camera restriction (`camera=(), microphone=(), geolocation=()`) across all other routes.
+    - Replaced the mock viewfinder in `apps/web/src/app/scanner/page.tsx` with a real WebRTC camera optical scanner powered by `html5-qrcode`.
+    - Implemented camera device enumeration with automatic rear/environment camera auto-selection (`/back|rear|environment/i`), device dropdown switching for multi-camera workstations, and dynamic viewport-responsive `qrbox` calculation.
+    - Added comprehensive hardware and permission error mapping (`NotAllowedError`, `NotFoundError`, `NotReadableError`) with user-friendly remediation instructions.
+    - Added 3.5s cooldown debouncer to prevent duplicate submissions when scanning the same student pass consecutively.
+    - Added Web Audio API subtle audio tone feedback upon successful scan.
+    - Provided accessible fallback for manual token pasting and handheld 2D Bluetooth/USB barcode scanners with Enter-key submission.
+    - Ensured robust scanner teardown and track release on component unmount and tab switching to prevent camera hardware locks.
+    - Added unit test suite in `tests/unit/web/security-headers.spec.ts` (4/4 tests passing) verifying exact route header scoping and baseline security headers.
+    - Added unit test suite in `tests/unit/web/scanner.spec.ts` (10/10 tests passing) asserting camera selection, error mapping, cooldown debouncing, and responsive qrbox sizing.
   - **Affected Files:**
-    - `apps/web/src/app/scanner/page.tsx`
     - `apps/web/next.config.ts`
+    - `apps/web/package.json`
+    - `apps/web/src/app/scanner/page.tsx`
+    - `package-lock.json`
+    - `tests/unit/web/scanner.spec.ts`
+    - `tests/unit/web/security-headers.spec.ts`
   - **Problem:** `scanner/page.tsx` only toggles a dummy `cameraActive` state rendering `[Viewfinder Active: Ready for Optical Scan]` in a black box without calling `getUserMedia` or any QR decoder. At the same time, `next.config.ts` sets `Permissions-Policy: camera=()` globally, blocking camera access on all pages.
   - **Remediation Plan:**
     1. Integrate a reliable, lightweight browser QR scanner library (e.g., `html5-qrcode` or `@zxing/browser`).

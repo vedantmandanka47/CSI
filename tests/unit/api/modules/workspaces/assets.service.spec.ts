@@ -3,7 +3,7 @@ import { WorkspacesService } from '../../../../../apps/api/src/modules/workspace
 import { WorkspaceAssetStorageService } from '../../../../../apps/api/src/modules/workspaces/workspace-asset-storage.service.js';
 import { PrismaService } from '../../../../../apps/api/src/infra/prisma/prisma.service.js';
 import { RoleCode, ErrorCode, AssetCategory, AssetStatus } from '@csi/shared';
-import { ForbiddenException } from '@nestjs/common';
+import { ForbiddenException, BadRequestException } from '@nestjs/common';
 import { createHash } from 'crypto';
 
 type MockPrisma = {
@@ -151,6 +151,62 @@ describe('AssetsService (Unit)', () => {
           }),
         }),
       );
+    });
+
+    it('should throw BadRequestException if base64 payload is invalid (TASK-019 / B11)', async () => {
+      const errPromise = service.uploadAsset('user-designer', [RoleCode.COMMITTEE], 'graphics', {
+        title: 'Invalid Base64 Poster',
+        category: AssetCategory.POSTER,
+        fileName: 'poster.png',
+        fileBase64: 'invalid!not#base64',
+      });
+
+      await expect(errPromise).rejects.toThrow(BadRequestException);
+      await expect(errPromise).rejects.toMatchObject({
+        response: {
+          code: ErrorCode.VALIDATION_ERROR,
+        },
+      });
+    });
+
+    it('should throw BadRequestException if decoded buffer exceeds 10 MB limit (TASK-019 / B11)', async () => {
+      // 10.1 MB buffer in base64
+      const largeB64 = Buffer.alloc(Math.floor(10.1 * 1024 * 1024), 'x').toString('base64');
+
+      const errPromise = service.uploadAsset('user-designer', [RoleCode.COMMITTEE], 'graphics', {
+        title: 'Oversized Poster',
+        category: AssetCategory.POSTER,
+        fileName: 'poster.png',
+        fileBase64: largeB64,
+      });
+
+      await expect(errPromise).rejects.toThrow(BadRequestException);
+      await expect(errPromise).rejects.toMatchObject({
+        response: {
+          code: ErrorCode.ASSET_FILE_TOO_LARGE,
+        },
+      });
+    });
+
+    it('should clean up persisted file from storage if database creation fails (HR-010 / TASK-019)', async () => {
+      mockStorage.saveAssetFile.mockResolvedValue({
+        storagePath: `${mockCommittee.id}/asset-err_poster.png`,
+        fileHash: 'sha-dummy',
+        fileSizeBytes: 100,
+        mimeType: 'image/png',
+      });
+      mockPrisma.committeeAsset.create.mockRejectedValue(new Error('Database write constraint violation'));
+
+      await expect(
+        service.uploadAsset('user-designer', [RoleCode.COMMITTEE], 'graphics', {
+          title: 'Failing DB Poster',
+          category: AssetCategory.POSTER,
+          fileName: 'poster.png',
+          fileBase64: 'data:image/png;base64,ZmFrZS1wbmctY29udGVudA==',
+        }),
+      ).rejects.toThrow('Database write constraint violation');
+
+      expect(mockStorage.deleteAssetFile).toHaveBeenCalledWith(`${mockCommittee.id}/asset-err_poster.png`);
     });
   });
 

@@ -115,6 +115,26 @@ describe('GlobalExceptionFilter (ARCH-15, Section 14.1)', () => {
     expect(JSON.stringify(jsonArg)).not.toContain('DB_PASS');
   });
 
+  it('formats HTTP 413 payload too large errors into ASSET_FILE_TOO_LARGE (TASK-019 / B11)', () => {
+    const payloadTooLargeError = {
+      status: 413,
+      statusCode: 413,
+      type: 'entity.too.large',
+      message: 'request entity too large',
+    };
+
+    filter.catch(payloadTooLargeError, mockHost);
+
+    expect(mockResponse.status).toHaveBeenCalledWith(413);
+    expect(mockResponse.json).toHaveBeenCalledWith({
+      error: {
+        code: ErrorCode.ASSET_FILE_TOO_LARGE,
+        message: 'Request payload exceeds maximum allowed size (15 MB gateway limit).',
+        fields: {},
+      },
+    });
+  });
+
   it('preserves existing X-Request-Id from request header', () => {
     mockRequest.headers['x-request-id'] = 'custom-trace-id-1234';
     const exception = new HttpException('Bad Request', HttpStatus.BAD_REQUEST);

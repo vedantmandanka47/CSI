@@ -17,6 +17,7 @@ import {
   AssetResponse,
   AssetListResponse,
   AssetStatus,
+  MAX_ASSET_FILE_SIZE_BYTES,
 } from '@csi/shared';
 
 @Injectable()
@@ -28,29 +29,54 @@ export class AssetsService {
   ) {}
 
   /**
-   * Parse base64 string or data URI into binary Buffer
+   * Parse base64 string or data URI into binary Buffer with size and charset validation
    */
   private parseBase64(input: string): { buffer: Buffer; mimeType?: string } {
     const trimmed = input.trim();
-    const dataUriMatch = trimmed.match(/^data:([a-zA-Z0-9/+-]+);base64,(.+)$/);
-
-    if (dataUriMatch && dataUriMatch[1] && dataUriMatch[2]) {
-      return {
-        mimeType: dataUriMatch[1],
-        buffer: Buffer.from(dataUriMatch[2], 'base64'),
-      };
+    if (!trimmed) {
+      throw new BadRequestException({
+        code: ErrorCode.VALIDATION_ERROR,
+        message: 'File content (base64) cannot be empty',
+      });
     }
 
-    try {
-      return {
-        buffer: Buffer.from(trimmed, 'base64'),
-      };
-    } catch {
+    let rawBase64 = trimmed;
+    let mimeType: string | undefined;
+
+    const dataUriMatch = trimmed.match(/^data:([^;]+(?:;[^;]+)*)?;base64,(.+)$/s);
+    if (dataUriMatch && dataUriMatch[2]) {
+      if (dataUriMatch[1]) {
+        mimeType = dataUriMatch[1].split(';')[0]?.trim();
+      }
+      rawBase64 = dataUriMatch[2].trim();
+    }
+
+    // Validate base64 character set
+    const sanitized = rawBase64.replace(/\s+/g, '');
+    const base64Regex = /^[A-Za-z0-9+/]+={0,2}$/;
+    if (sanitized.length === 0 || sanitized.length % 4 !== 0 || !base64Regex.test(sanitized)) {
       throw new BadRequestException({
         code: ErrorCode.VALIDATION_ERROR,
         message: 'Invalid base64 payload provided for asset upload',
       });
     }
+
+    const buffer = Buffer.from(sanitized, 'base64');
+    if (buffer.length === 0) {
+      throw new BadRequestException({
+        code: ErrorCode.VALIDATION_ERROR,
+        message: 'Uploaded file cannot be empty',
+      });
+    }
+
+    if (buffer.length > MAX_ASSET_FILE_SIZE_BYTES) {
+      throw new BadRequestException({
+        code: ErrorCode.ASSET_FILE_TOO_LARGE,
+        message: `File exceeds maximum allowed size of 10 MB (${buffer.length} bytes)`,
+      });
+    }
+
+    return { buffer, mimeType };
   }
 
   /**
@@ -105,74 +131,80 @@ export class AssetsService {
       mimeType,
     );
 
-    const asset = await this.prisma.committeeAsset.create({
-      data: {
-        id: assetId,
-        committeeId: committee.id,
-        eventId: input.eventId ?? null,
-        taskId: input.taskId ?? null,
-        title: input.title,
-        category: input.category,
-        fileName: input.fileName,
-        storagePath: saved.storagePath,
-        fileSizeBytes: saved.fileSizeBytes,
-        mimeType: saved.mimeType,
-        fileHash: saved.fileHash,
-        status: AssetStatus.DRAFT,
-        uploadedById: userId,
-      },
-      include: {
-        committee: true,
-        event: true,
-        uploadedBy: { select: { id: true, name: true, email: true } },
-      },
-    });
-
-    await this.prisma.auditLog.create({
-      data: {
-        action: 'asset.uploaded',
-        targetType: 'asset',
-        targetId: asset.id,
-        actorId: userId,
-        ip: ip ?? '127.0.0.1',
-        afterJson: {
-          assetId: asset.id,
-          committeeCode: committee.code,
-          fileName: asset.fileName,
-          category: asset.category,
-          fileSizeBytes: asset.fileSizeBytes,
-          fileHash: asset.fileHash,
+    try {
+      const asset = await this.prisma.committeeAsset.create({
+        data: {
+          id: assetId,
+          committeeId: committee.id,
+          eventId: input.eventId ?? null,
+          taskId: input.taskId ?? null,
+          title: input.title,
+          category: input.category,
+          fileName: input.fileName,
+          storagePath: saved.storagePath,
+          fileSizeBytes: saved.fileSizeBytes,
+          mimeType: saved.mimeType,
+          fileHash: saved.fileHash,
+          status: AssetStatus.DRAFT,
+          uploadedById: userId,
         },
-      },
-    });
+        include: {
+          committee: true,
+          event: true,
+          uploadedBy: { select: { id: true, name: true, email: true } },
+        },
+      });
 
-    return {
-      id: asset.id,
-      committeeId: asset.committeeId,
-      committeeCode: asset.committee.code,
-      eventId: asset.eventId,
-      eventTitle: asset.event?.title ?? null,
-      taskId: asset.taskId,
-      title: asset.title,
-      category: asset.category as AssetResponse['category'],
-      fileName: asset.fileName,
-      fileSizeBytes: asset.fileSizeBytes,
-      mimeType: asset.mimeType,
-      fileHash: asset.fileHash,
-      status: asset.status as AssetResponse['status'],
-      reviewNotes: null,
-      reviewedById: null,
-      reviewedBy: null,
-      reviewedAt: null,
-      uploadedById: asset.uploadedById,
-      uploadedBy: {
-        id: asset.uploadedBy.id,
-        fullName: asset.uploadedBy.name,
-        email: asset.uploadedBy.email,
-      },
-      createdAt: asset.createdAt.toISOString(),
-      updatedAt: asset.updatedAt.toISOString(),
-    };
+      await this.prisma.auditLog.create({
+        data: {
+          action: 'asset.uploaded',
+          targetType: 'asset',
+          targetId: asset.id,
+          actorId: userId,
+          ip: ip ?? '127.0.0.1',
+          afterJson: {
+            assetId: asset.id,
+            committeeCode: committee.code,
+            fileName: asset.fileName,
+            category: asset.category,
+            fileSizeBytes: asset.fileSizeBytes,
+            fileHash: asset.fileHash,
+          },
+        },
+      });
+
+      return {
+        id: asset.id,
+        committeeId: asset.committeeId,
+        committeeCode: asset.committee.code,
+        eventId: asset.eventId,
+        eventTitle: asset.event?.title ?? null,
+        taskId: asset.taskId,
+        title: asset.title,
+        category: asset.category as AssetResponse['category'],
+        fileName: asset.fileName,
+        fileSizeBytes: asset.fileSizeBytes,
+        mimeType: asset.mimeType,
+        fileHash: asset.fileHash,
+        status: asset.status as AssetResponse['status'],
+        reviewNotes: null,
+        reviewedById: null,
+        reviewedBy: null,
+        reviewedAt: null,
+        uploadedById: asset.uploadedById,
+        uploadedBy: {
+          id: asset.uploadedBy.id,
+          fullName: asset.uploadedBy.name,
+          email: asset.uploadedBy.email,
+        },
+        createdAt: asset.createdAt.toISOString(),
+        updatedAt: asset.updatedAt.toISOString(),
+      };
+    } catch (err) {
+      // Reconcile filesystem write with database failure: remove orphaned file if database or audit log fails (HR-010)
+      await this.storageService.deleteAssetFile(saved.storagePath);
+      throw err;
+    }
   }
 
   /**

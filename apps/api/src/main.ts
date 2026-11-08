@@ -8,6 +8,7 @@ import { env } from './config/env.js';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, {
+    bodyParser: false,
     bufferLogs: true,
   });
 

@@ -61,6 +61,21 @@ export class GlobalExceptionFilter implements ExceptionFilter {
           fields = { _all: obj.message as string[] };
         }
       }
+    } else if (
+      typeof exception === 'object' &&
+      exception !== null &&
+      (('status' in exception && typeof (exception as Record<string, unknown>).status === 'number') ||
+        ('statusCode' in exception && typeof (exception as Record<string, unknown>).statusCode === 'number'))
+    ) {
+      const rawErr = exception as { status?: number; statusCode?: number; message?: string; type?: string };
+      status = rawErr.status || rawErr.statusCode || HttpStatus.INTERNAL_SERVER_ERROR;
+      if (status === HttpStatus.PAYLOAD_TOO_LARGE || rawErr.type === 'entity.too.large') {
+        code = ErrorCode.ASSET_FILE_TOO_LARGE;
+        message = 'Request payload exceeds maximum allowed size (15 MB gateway limit).';
+      } else {
+        code = this.httpStatusToErrorCode(status);
+        message = rawErr.message || message;
+      }
     } else {
       // 500 Server error — log full error internally with requestId, never leak stack trace to client
       this.logger.error(
@@ -96,6 +111,8 @@ export class GlobalExceptionFilter implements ExceptionFilter {
         return ErrorCode.VALIDATION_ERROR;
       case HttpStatus.TOO_MANY_REQUESTS:
         return ErrorCode.RATE_LIMITED;
+      case HttpStatus.PAYLOAD_TOO_LARGE:
+        return ErrorCode.ASSET_FILE_TOO_LARGE;
       default:
         return ErrorCode.INTERNAL_SERVER_ERROR;
     }

@@ -25,6 +25,9 @@ import {
   AssetStatus,
   ALL_ASSET_CATEGORIES,
   ALL_ASSET_STATUSES,
+  MAX_ASSET_FILE_SIZE_BYTES,
+  MAX_ASSET_BASE64_LENGTH,
+  estimateBase64DecodedBytes,
 } from '@csi/shared';
 
 describe('M16 Shared Schemas (Tasks, Checklists & Assets)', () => {
@@ -202,6 +205,59 @@ describe('M16 Shared Schemas (Tasks, Checklists & Assets)', () => {
         reviewNotes: 'Colors match official brand guidelines.',
       };
       expect(ReviewAssetSchema.safeParse(review).success).toBe(true);
+    });
+
+    it('should accurately calculate decoded byte size and enforce boundary size limits (TASK-019 / B11 / HR-009)', () => {
+      expect(MAX_ASSET_FILE_SIZE_BYTES).toBe(10 * 1024 * 1024);
+      expect(MAX_ASSET_BASE64_LENGTH).toBe(14 * 1024 * 1024);
+
+      // 1. Boundary: 9.9 MB binary payload (accepted)
+      const size9_9Mb = Math.floor(9.9 * 1024 * 1024);
+      const b64_9_9Mb = Buffer.alloc(size9_9Mb, 'a').toString('base64');
+      expect(estimateBase64DecodedBytes(b64_9_9Mb)).toBe(size9_9Mb);
+      const res9_9 = UploadAssetSchema.safeParse({
+        title: '9.9 MB Large Poster',
+        fileName: 'poster-9.9mb.png',
+        fileBase64: b64_9_9Mb,
+      });
+      expect(res9_9.success).toBe(true);
+
+      // 2. Boundary: 10.0 MB exact binary payload (accepted)
+      const size10Mb = MAX_ASSET_FILE_SIZE_BYTES;
+      const b64_10Mb = 'data:image/png;base64,' + Buffer.alloc(size10Mb, 'b').toString('base64');
+      expect(estimateBase64DecodedBytes(b64_10Mb)).toBe(size10Mb);
+      const res10_0 = UploadAssetSchema.safeParse({
+        title: '10.0 MB Exact Poster',
+        fileName: 'poster-10mb.png',
+        fileBase64: b64_10Mb,
+      });
+      expect(res10_0.success).toBe(true);
+
+      // 3. Boundary: 10.1 MB binary payload (rejected)
+      const size10_1Mb = Math.floor(10.1 * 1024 * 1024);
+      const b64_10_1Mb = Buffer.alloc(size10_1Mb, 'c').toString('base64');
+      expect(estimateBase64DecodedBytes(b64_10_1Mb)).toBe(size10_1Mb);
+      const res10_1 = UploadAssetSchema.safeParse({
+        title: '10.1 MB Oversized Poster',
+        fileName: 'poster-10.1mb.png',
+        fileBase64: b64_10_1Mb,
+      });
+      expect(res10_1.success).toBe(false);
+      if (!res10_1.success) {
+        expect(res10_1.error.issues[0].message).toContain('Decoded file size exceeds maximum allowed size of 10 MB');
+      }
+
+      // 4. Boundary: Encoded string exceeding MAX_ASSET_BASE64_LENGTH (> 14 MB) (rejected)
+      const oversizedB64 = 'a'.repeat(MAX_ASSET_BASE64_LENGTH + 10);
+      const resOversized = UploadAssetSchema.safeParse({
+        title: 'Oversized String Poster',
+        fileName: 'poster-oversized.png',
+        fileBase64: oversizedB64,
+      });
+      expect(resOversized.success).toBe(false);
+      if (!resOversized.success) {
+        expect(resOversized.error.issues[0].message).toContain('Asset base64 content cannot exceed');
+      }
     });
 
     it('should validate AssetResponseSchema and AssetListResponseSchema', () => {
