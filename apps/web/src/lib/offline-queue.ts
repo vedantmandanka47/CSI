@@ -131,7 +131,20 @@ export async function syncPendingOperations(): Promise<BatchSyncAttendanceRespon
     })),
   };
 
-  const response = await apiClient.post<BatchSyncAttendanceResponse>('/attendance/sync', payload);
+  const response = await apiClient.post<{ data: BatchSyncAttendanceResponse } | BatchSyncAttendanceResponse>(
+    '/attendance/sync',
+    payload,
+  );
+
+  // Normalize API envelope: unwrap `{ data: ... }` if wrapped (TASK-021 / B18 / F06)
+  const syncData: BatchSyncAttendanceResponse =
+    response && typeof response === 'object' && 'data' in response && response.data
+      ? response.data
+      : (response as BatchSyncAttendanceResponse);
+
+  if (!syncData || !Array.isArray(syncData.results)) {
+    throw new Error('Invalid synchronization response structure from server.');
+  }
 
   // Update local IndexedDB records with reconciliation result
   const db = await openDb();
@@ -139,7 +152,7 @@ export async function syncPendingOperations(): Promise<BatchSyncAttendanceRespon
   const store = tx.objectStore(STORE_NAME);
   const nowIso = new Date().toISOString();
 
-  for (const res of response.results) {
+  for (const res of syncData.results) {
     const getReq = store.get(res.client_uuid);
     getReq.onsuccess = () => {
       const existing = getReq.result as QueuedAttendanceOperation | undefined;
@@ -157,7 +170,14 @@ export async function syncPendingOperations(): Promise<BatchSyncAttendanceRespon
     };
   }
 
-  return response;
+  // Ensure IndexedDB transaction commits before resolving
+  await new Promise<void>((resolve, reject) => {
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(tx.error);
+  });
+
+  return syncData;
 }
 
 /**

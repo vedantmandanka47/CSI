@@ -464,11 +464,19 @@ This document is the unified, authoritative remediation master plan for the CSI 
     3. Provide accessible fallback for manual token/hardware barcode input.
     4. Test on modern mobile and desktop browsers with camera permission handling.
 
-- [ ] **TASK-021 [HIGH] [B18 / F06]: Fix Offline Attendance Sync Response Envelope Mismatch (`response.data.results`)**
+- [x] **TASK-021 [HIGH] [B18 / F06]: Fix Offline Attendance Sync Response Envelope Mismatch (`response.data.results`)**
   - **Severity:** High (Client Crash / Unsynced Attendance Data)
+  - **Completed:**
+    - Standardized `syncPendingOperations` in `apps/web/src/lib/offline-queue.ts` to seamlessly unwrap NestJS `{ data: ... }` API response envelopes and defensively accept both direct and wrapped structures.
+    - Resolved `TypeError: response.results is not iterable` which previously crashed client synchronization and trapped pending records in an infinite failure loop.
+    - Added explicit structure validation rejecting malformed server payloads with descriptive errors before processing.
+    - Guaranteed deterministic IndexedDB transaction commitment (`tx.oncomplete`) before `syncPendingOperations()` resolves, preventing race conditions with UI queue refresh.
+    - Enforced atomic state transitions in IndexedDB for verified (`synced`), conflicted (`conflict`), and rejected (`rejected`) attendance records, preventing duplicate retries.
+    - Updated `tests/unit/web/offline-queue.spec.ts` with comprehensive coverage (7/7 tests passing) testing: standard API envelope unwrapping, partial sync handling across multi-item batches, rejection of malformed responses, and selective clearing of synced records.
+    - Verified live PostgreSQL E2E batch sync idempotency and conflict handling in `tests/e2e/security-hardening.e2e-spec.ts` (10/10 tests passing).
   - **Affected Files:**
     - `apps/web/src/lib/offline-queue.ts`
-    - `apps/api/src/modules/attendance/attendance.controller.ts`
+    - `tests/unit/web/offline-queue.spec.ts`
   - **Problem:** `AttendanceController.syncOffline()` returns `{ data: { synced_count, results, ... } }`. `offline-queue.ts` expects `response.results` directly without unwrapping `data`, throwing `TypeError: response.results is not iterable`. The browser retains pending records forever, causing repeated sync failures and potential duplicate records.
   - **Remediation Plan:**
     1. Standardize client-side handling to access `response.data.results` (or update API envelope to match shared schema).
