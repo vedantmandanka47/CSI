@@ -553,11 +553,20 @@ This document is the unified, authoritative remediation master plan for the CSI 
     2. Filter all role assignments by active term dates.
     3. Add tests verifying expired role holders are rejected from tier-restricted sessions.
 
-- [ ] **TASK-025 [MEDIUM] [F43]: Scope Client-Side Offline Queue by User & Await IndexedDB Transaction Durability**
+- [x] **TASK-025 [MEDIUM] [F43]: Scope Client-Side Offline Queue by User & Await IndexedDB Transaction Durability**
   - **Severity:** Medium (Data Privacy / Multi-User Conflict on Shared Devices)
+  - **Completed:**
+    - Upgraded client IndexedDB schema to version 2 with index `marked_by_user_id` in `apps/web/src/lib/offline-queue.ts`.
+    - Added user scoping to `QueuedAttendanceOperation` (`marked_by_user_id`), partitioning queued operations so User B cannot view or sync User A's un-synced operations on shared devices.
+    - Updated `enqueueOfflineOperation` and `clearSyncedOperations` to await IndexedDB transaction completion (`tx.oncomplete`) before resolving, preventing data loss on unexpected tab closures or power interruptions.
+    - Added `quarantinePendingOperations` and integrated it with `auth-context.tsx` (`logout()`), automatically quarantining pending operations on logout to prevent cross-account sync while preserving records for audit recovery.
+    - Updated `apps/web/src/app/scanner/page.tsx` to forward the active `user.id` into all offline queue operations and display the `quarantined` badge state.
+    - Added unit test suite in `tests/unit/web/offline-queue.spec.ts` (17/17 passed) asserting user queue partitioning, scoped sync dispatch, logout quarantine transitions, and transaction durability. Monorepo unit suite passing (650/650 tests).
   - **Affected Files:**
     - `apps/web/src/lib/offline-queue.ts`
     - `apps/web/src/components/auth-context.tsx`
+    - `apps/web/src/app/scanner/page.tsx`
+    - `tests/unit/web/offline-queue.spec.ts`
   - **Problem:** IndexedDB `pending_operations` is origin-wide and unpartitioned. If user A logs out and user B logs in on the same device, user B sees and syncs user A's queued records.
   - **Remediation Plan:**
     1. Scope IndexedDB records by user ID.

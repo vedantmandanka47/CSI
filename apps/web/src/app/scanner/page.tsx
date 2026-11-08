@@ -66,6 +66,7 @@ export default function VolunteerScannerPage() {
     synced: 0,
     conflict: 0,
     rejected: 0,
+    quarantined: 0,
     total: 0,
   });
   const [queuedItems, setQueuedItems] = useState<QueuedAttendanceOperation[]>([]);
@@ -137,14 +138,14 @@ export default function VolunteerScannerPage() {
   // Refresh queue stats
   const refreshQueue = useCallback(async () => {
     try {
-      const stats = await getQueueStats();
+      const stats = await getQueueStats(user?.id);
       setQueueStats(stats);
-      const items = await getAllQueuedOperations();
+      const items = await getAllQueuedOperations(user?.id);
       setQueuedItems(items);
     } catch {
       // ignore
     }
-  }, []);
+  }, [user?.id]);
 
   // Fetch open sessions
   const fetchSessions = useCallback(async () => {
@@ -184,7 +185,7 @@ export default function VolunteerScannerPage() {
   const handleSync = async () => {
     setProcessing(true);
     try {
-      const res = await syncPendingOperations();
+      const res = await syncPendingOperations(user?.id);
       if (res) {
         setFeedback({
           type: res.conflict_count > 0 ? 'warning' : 'success',
@@ -225,11 +226,14 @@ export default function VolunteerScannerPage() {
       if (!isOnline) {
         // Store in IndexedDB
         try {
-          await enqueueOfflineOperation({
-            session_id: selectedSessionId,
-            method: AttendanceMethod.QR_SCAN,
-            payload: token,
-          });
+          await enqueueOfflineOperation(
+            {
+              session_id: selectedSessionId,
+              method: AttendanceMethod.QR_SCAN,
+              payload: token,
+            },
+            user?.id,
+          );
           setFeedback({
             type: 'warning',
             title: 'Queued Offline (IndexedDB)',
@@ -272,11 +276,14 @@ export default function VolunteerScannerPage() {
           });
         } else {
           // Fallback to queue if network dropped mid-request
-          await enqueueOfflineOperation({
-            session_id: selectedSessionId,
-            method: AttendanceMethod.QR_SCAN,
-            payload: token,
-          });
+          await enqueueOfflineOperation(
+            {
+              session_id: selectedSessionId,
+              method: AttendanceMethod.QR_SCAN,
+              payload: token,
+            },
+            user?.id,
+          );
           setFeedback({
             type: 'warning',
             title: 'Network Interrupted — Queued Locally',
@@ -289,7 +296,7 @@ export default function VolunteerScannerPage() {
         setProcessing(false);
       }
     },
-    [isOnline, qrTokenInput, refreshQueue, selectedSessionId],
+    [isOnline, qrTokenInput, refreshQueue, selectedSessionId, user?.id],
   );
 
   const stopScanner = useCallback(async () => {
@@ -454,12 +461,15 @@ export default function VolunteerScannerPage() {
     const clientUuid = crypto.randomUUID();
 
     if (!isOnline) {
-      await enqueueOfflineOperation({
-        session_id: selectedSessionId,
-        method: AttendanceMethod.ROTATING_CODE,
-        payload: totpCodeInput.trim(),
-        member_id: memberIdInput.trim(),
-      });
+      await enqueueOfflineOperation(
+        {
+          session_id: selectedSessionId,
+          method: AttendanceMethod.ROTATING_CODE,
+          payload: totpCodeInput.trim(),
+          member_id: memberIdInput.trim(),
+        },
+        user?.id,
+      );
       setFeedback({
         type: 'warning',
         title: 'Queued Offline (IndexedDB)',
@@ -946,7 +956,7 @@ export default function VolunteerScannerPage() {
               <button
                 type="button"
                 onClick={async () => {
-                  await clearSyncedOperations();
+                  await clearSyncedOperations(user?.id);
                   await refreshQueue();
                 }}
                 className="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs font-medium text-text hover:bg-surface-raised"
@@ -995,6 +1005,8 @@ export default function VolunteerScannerPage() {
                               ? 'bg-highlight/20 text-warning'
                               : item.queue_status === 'rejected'
                               ? 'bg-danger/10 text-danger'
+                              : item.queue_status === 'quarantined'
+                              ? 'bg-muted/20 text-text-muted border border-border'
                               : 'bg-surface-raised text-text-muted'
                           }`}
                         >

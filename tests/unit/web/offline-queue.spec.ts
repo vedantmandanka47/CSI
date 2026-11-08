@@ -2,10 +2,14 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import {
   enqueueOfflineOperation,
   getPendingOperations,
+  getAllQueuedOperations,
   syncPendingOperations,
   clearSyncedOperations,
   getQueueStats,
   decodeQrPassPayload,
+  setCurrentQueueUserId,
+  quarantinePendingOperations,
+  clearUserOfflineQueue,
   QueuedAttendanceOperation,
 } from '@/lib/offline-queue';
 import { apiClient } from '@/lib/api-client';
@@ -402,6 +406,193 @@ describe('Offline Attendance Queue (IndexedDB) & Sync Reconciliation (TASK-021 /
       expect(item.client_uuid).toBeDefined();
       expect(item.queue_status).toBe('pending');
       expect(mockStore.has(item.client_uuid)).toBe(true);
+    });
+  });
+
+  describe('User Queue Scoping & Durability Guarantees (TASK-025 / F43)', () => {
+    it('scopes queued operations by user ID and partitions access', async () => {
+      const itemUserA = await enqueueOfflineOperation(
+        {
+          session_id: 'session-1',
+          method: AttendanceMethod.QR_SCAN,
+          payload: 'token-a',
+        },
+        'user-a',
+      );
+
+      const itemUserB = await enqueueOfflineOperation(
+        {
+          session_id: 'session-2',
+          method: AttendanceMethod.QR_SCAN,
+          payload: 'token-b',
+        },
+        'user-b',
+      );
+
+      // Verify partition by user
+      const pendingA = await getPendingOperations('user-a');
+      expect(pendingA.length).toBe(1);
+      expect(pendingA[0]?.client_uuid).toBe(itemUserA.client_uuid);
+      expect(pendingA[0]?.marked_by_user_id).toBe('user-a');
+
+      const pendingB = await getPendingOperations('user-b');
+      expect(pendingB.length).toBe(1);
+      expect(pendingB[0]?.client_uuid).toBe(itemUserB.client_uuid);
+      expect(pendingB[0]?.marked_by_user_id).toBe('user-b');
+    });
+
+    it('syncPendingOperations synchronizes only the active user pending operations', async () => {
+      const itemUserA = await enqueueOfflineOperation(
+        {
+          session_id: 'session-1',
+          method: AttendanceMethod.QR_SCAN,
+          payload: 'token-user-a',
+        },
+        'user-a',
+      );
+
+      const itemUserB = await enqueueOfflineOperation(
+        {
+          session_id: 'session-2',
+          method: AttendanceMethod.QR_SCAN,
+          payload: 'token-user-b',
+        },
+        'user-b',
+      );
+
+      const postSpy = vi.spyOn(apiClient, 'post').mockResolvedValueOnce({
+        data: {
+          synced_count: 1,
+          conflict_count: 0,
+          rejected_count: 0,
+          results: [
+            {
+              client_uuid: itemUserA.client_uuid,
+              status: AttendanceStatus.VERIFIED,
+              message: 'Verified',
+            },
+          ],
+        },
+      } as unknown as never);
+
+      await syncPendingOperations('user-a');
+
+      // Assert only User A's operation was dispatched to the server
+      expect(postSpy).toHaveBeenCalledWith(
+        '/attendance/sync',
+        expect.objectContaining({
+          operations: [
+            expect.objectContaining({
+              client_uuid: itemUserA.client_uuid,
+            }),
+          ],
+        }),
+      );
+
+      // Verify User B's operation was untouched and remains pending
+      const remainingB = await getPendingOperations('user-b');
+      expect(remainingB.length).toBe(1);
+      expect(remainingB[0]?.client_uuid).toBe(itemUserB.client_uuid);
+      expect(remainingB[0]?.queue_status).toBe('pending');
+    });
+
+    it('quarantines user pending operations on logout to prevent cross-account sync', async () => {
+      const itemUserA = await enqueueOfflineOperation(
+        {
+          session_id: 'session-1',
+          method: AttendanceMethod.QR_SCAN,
+          payload: 'token-user-a-quarantine',
+        },
+        'user-a',
+      );
+
+      const quarantinedCount = await quarantinePendingOperations('user-a');
+      expect(quarantinedCount).toBe(1);
+
+      // Pending queue for User A is now empty
+      const pendingA = await getPendingOperations('user-a');
+      expect(pendingA.length).toBe(0);
+
+      // Record is preserved in quarantined status
+      const allA = await getAllQueuedOperations('user-a');
+      expect(allA.length).toBe(1);
+      expect(allA[0]?.client_uuid).toBe(itemUserA.client_uuid);
+      expect(allA[0]?.queue_status).toBe('quarantined');
+      expect(allA[0]?.reconcile_message).toContain('Quarantined on user logout');
+
+      const stats = await getQueueStats('user-a');
+      expect(stats.quarantined).toBe(1);
+      expect(stats.pending).toBe(0);
+    });
+
+    it('clears only active user synced operations while preserving other users', async () => {
+      const itemUserA = await enqueueOfflineOperation(
+        {
+          session_id: 'session-1',
+          method: AttendanceMethod.QR_SCAN,
+          payload: 'token-a-synced',
+        },
+        'user-a',
+      );
+      const itemUserB = await enqueueOfflineOperation(
+        {
+          session_id: 'session-2',
+          method: AttendanceMethod.QR_SCAN,
+          payload: 'token-b-synced',
+        },
+        'user-b',
+      );
+
+      // Mark both as synced
+      const storedA = mockStore.get(itemUserA.client_uuid)!;
+      storedA.queue_status = 'synced';
+      mockStore.set(itemUserA.client_uuid, storedA);
+
+      const storedB = mockStore.get(itemUserB.client_uuid)!;
+      storedB.queue_status = 'synced';
+      mockStore.set(itemUserB.client_uuid, storedB);
+
+      // Clear synced for User A only
+      await clearSyncedOperations('user-a');
+
+      expect(mockStore.has(itemUserA.client_uuid)).toBe(false);
+      expect(mockStore.has(itemUserB.client_uuid)).toBe(true);
+    });
+
+    it('clearUserOfflineQueue completely purges records for a specific user', async () => {
+      const itemUserA = await enqueueOfflineOperation(
+        {
+          session_id: 'session-1',
+          method: AttendanceMethod.QR_SCAN,
+          payload: 'token-a-purge',
+        },
+        'user-a',
+      );
+      const itemUserB = await enqueueOfflineOperation(
+        {
+          session_id: 'session-2',
+          method: AttendanceMethod.QR_SCAN,
+          payload: 'token-b-purge',
+        },
+        'user-b',
+      );
+
+      await clearUserOfflineQueue('user-a');
+
+      expect(mockStore.has(itemUserA.client_uuid)).toBe(false);
+      expect(mockStore.has(itemUserB.client_uuid)).toBe(true);
+    });
+
+    it('sets and retrieves active queue user ID globally via setCurrentQueueUserId', async () => {
+      setCurrentQueueUserId('global-user-99');
+      const item = await enqueueOfflineOperation({
+        session_id: 'session-global',
+        method: AttendanceMethod.QR_SCAN,
+        payload: 'token-global',
+      });
+
+      expect(item.marked_by_user_id).toBe('global-user-99');
+      setCurrentQueueUserId(null);
     });
   });
 });
