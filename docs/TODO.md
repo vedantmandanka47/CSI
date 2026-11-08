@@ -483,10 +483,23 @@ This document is the unified, authoritative remediation master plan for the CSI 
     2. Add unit test for `syncPendingOperations` simulating the exact API response structure.
     3. Test replay behavior on partially successful sync.
 
-- [ ] **TASK-022 [HIGH] [B18 / F07]: Centralize Attendance Validation & Eligibility Between Online and Offline Paths**
+- [x] **TASK-022 [HIGH] [B18 / F07]: Centralize Attendance Validation & Eligibility Between Online and Offline Paths**
   - **Severity:** High (Access Control Bypass via Offline Sync)
+  - **Completed:**
+    - Extracted a centralized attendance validation engine (`validateAttendanceCandidate` and `validateSessionBounds`) in `AttendanceService` reconciling validation parity between online and offline check-in flows.
+    - Enforced session status (`isOpen: true`) and time boundary checks (`[startsAt, endsAt + gracePeriod]`), rejecting offline sync attempts on closed or expired sessions with `SESSION_CLOSED` / `SESSION_EXPIRED`.
+    - Enforced active member standing lookup (`user.status === UserStatus.ACTIVE`), rejecting attendance check-in attempts for non-existent, inactive, or suspended users with `INELIGIBLE_MEMBER`.
+    - Enforced audience tier eligibility (`assertAudienceEligibility`) across both online check-in and batch offline sync, rejecting unconfirmed or role-ineligible attendees with `INELIGIBLE_AUDIENCE`.
+    - Mandated non-empty verification notes (>= 3 characters) for all manual attendance overrides in both online and offline paths with `MISSING_MANUAL_NOTES`.
+    - Implemented atomic transactional reconciliation in `syncOfflineOperations` executing `attendanceRecord.create`, `registration.updateMany`, and `auditLog.create` inside `this.prisma.$transaction`.
+    - Added dedicated audit log entries (`ATTENDANCE_RECORDED` or `ATTENDANCE_MANUAL_OVERRIDE` with `sync_mode: 'offline_reconciled'`) for all reconciled offline operations.
+    - Added rate limiting on `AttendanceController.syncOfflineOperations` (`sync-offline:${currentUser.id}`: 30 requests/min).
+    - Updated `tests/unit/api/modules/attendance/attendance.service.spec.ts` (16/16 tests passing) with unit test coverage for closed session rejection, inactive member rejection, missing manual notes rejection, audience tier mismatch rejection, and audit log generation.
+    - Verified live PostgreSQL E2E batch sync conflict handling and duplicate resilience in `tests/e2e/security-hardening.e2e-spec.ts` (10/10 tests passing).
   - **Affected Files:**
+    - `apps/api/src/modules/attendance/attendance.controller.ts`
     - `apps/api/src/modules/attendance/attendance.service.ts`
+    - `tests/unit/api/modules/attendance/attendance.service.spec.ts`
   - **Problem:** `syncOfflineOperations` does not enforce the same audience eligibility, active-user lookup, session open/time bounds, or manual override notes as online check-in. An authorized scanner can sync manual check-ins for closed sessions and ineligible users without audit trail.
   - **Remediation Plan:**
     1. Extract a unified attendance validation engine used by both online check-in and batch offline sync.

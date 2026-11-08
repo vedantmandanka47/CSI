@@ -75,7 +75,7 @@ describe('AttendanceService (M9)', () => {
         updateMany: jest.fn(),
       },
       user: {
-        findUnique: jest.fn(),
+        findUnique: jest.fn().mockResolvedValue({ id: 'member-1', status: UserStatus.ACTIVE }),
       },
       roleAssignment: {
         findMany: jest.fn(),
@@ -436,6 +436,132 @@ describe('AttendanceService (M9)', () => {
       expect(result.conflict_count).toBe(1);
       expect(result.results[0]?.status).toBe(AttendanceStatus.VERIFIED);
       expect(result.results[1]?.status).toBe(AttendanceStatus.FLAGGED_CONFLICT);
+      expect(mockPrisma.auditLog.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            action: 'ATTENDANCE_RECORDED',
+            afterJson: expect.objectContaining({
+              sync_mode: 'offline_reconciled',
+            }),
+          }),
+        }),
+      );
+    });
+
+    it('rejects offline sync if attendance session is closed (TASK-022 / B18 / F07)', async () => {
+      mockPrisma.attendanceSession.findUnique.mockResolvedValue({
+        ...sampleSession,
+        isOpen: false,
+      });
+
+      const batch = {
+        operations: [
+          {
+            client_uuid: 'uuid-closed-session',
+            session_id: 'session-1',
+            method: AttendanceMethod.MANUAL,
+            payload: 'manual-override',
+            member_id: 'member-1',
+            notes: 'Physical ID checked',
+            client_marked_at: new Date().toISOString(),
+          },
+        ],
+      };
+
+      const result = await service.syncOfflineOperations(batch, 'volunteer-1');
+
+      expect(result.rejected_count).toBe(1);
+      expect(result.results[0]?.status).toBe(AttendanceStatus.REJECTED);
+      expect(result.results[0]?.message).toContain('Attendance session is currently closed.');
+    });
+
+    it('rejects offline sync if member record is inactive or suspended (TASK-022 / B18 / F07)', async () => {
+      mockPrisma.attendanceSession.findUnique.mockResolvedValue(sampleSession);
+      mockPrisma.user.findUnique.mockResolvedValue({
+        id: 'member-inactive',
+        status: UserStatus.INACTIVE,
+      });
+
+      const batch = {
+        operations: [
+          {
+            client_uuid: 'uuid-inactive-member',
+            session_id: 'session-1',
+            method: AttendanceMethod.MANUAL,
+            payload: 'manual-override',
+            member_id: 'member-inactive',
+            notes: 'Physical ID checked',
+            client_marked_at: new Date().toISOString(),
+          },
+        ],
+      };
+
+      const result = await service.syncOfflineOperations(batch, 'volunteer-1');
+
+      expect(result.rejected_count).toBe(1);
+      expect(result.results[0]?.status).toBe(AttendanceStatus.REJECTED);
+      expect(result.results[0]?.message).toContain('Target member record is not in active standing.');
+    });
+
+    it('rejects offline sync manual override without mandatory verification reason (TASK-022 / B18 / F07)', async () => {
+      mockPrisma.attendanceSession.findUnique.mockResolvedValue(sampleSession);
+      mockPrisma.user.findUnique.mockResolvedValue({
+        id: 'member-1',
+        status: UserStatus.ACTIVE,
+      });
+
+      const batch = {
+        operations: [
+          {
+            client_uuid: 'uuid-no-notes',
+            session_id: 'session-1',
+            method: AttendanceMethod.MANUAL,
+            payload: 'manual-override',
+            member_id: 'member-1',
+            notes: '  ', // empty / invalid notes
+            client_marked_at: new Date().toISOString(),
+          },
+        ],
+      };
+
+      const result = await service.syncOfflineOperations(batch, 'volunteer-1');
+
+      expect(result.rejected_count).toBe(1);
+      expect(result.results[0]?.status).toBe(AttendanceStatus.REJECTED);
+      expect(result.results[0]?.message).toContain('Manual attendance override requires a mandatory verification reason');
+    });
+
+    it('rejects offline sync if member is not eligible for session audience tier (TASK-022 / B18 / F07)', async () => {
+      mockPrisma.attendanceSession.findUnique.mockResolvedValue({
+        ...sampleSession,
+        audience: AttendanceAudience.PARTICIPANTS,
+      });
+      mockPrisma.user.findUnique.mockResolvedValue({
+        id: 'unregistered-member',
+        status: UserStatus.ACTIVE,
+      });
+      // No registration found
+      mockPrisma.registration.findFirst.mockResolvedValue(null);
+
+      const batch = {
+        operations: [
+          {
+            client_uuid: 'uuid-ineligible-audience',
+            session_id: 'session-1',
+            method: AttendanceMethod.MANUAL,
+            payload: 'manual-override',
+            member_id: 'unregistered-member',
+            notes: 'Physical ID verified',
+            client_marked_at: new Date().toISOString(),
+          },
+        ],
+      };
+
+      const result = await service.syncOfflineOperations(batch, 'volunteer-1');
+
+      expect(result.rejected_count).toBe(1);
+      expect(result.results[0]?.status).toBe(AttendanceStatus.REJECTED);
+      expect(result.results[0]?.message).toContain('Member does not hold a confirmed registration for this event.');
     });
   });
 });

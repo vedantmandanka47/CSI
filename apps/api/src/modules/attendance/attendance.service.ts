@@ -4,6 +4,7 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
+  HttpException,
 } from '@nestjs/common';
 import { PrismaService } from '../../infra/prisma/prisma.service.js';
 import { IdCardService } from '../id-card/id-card.service.js';
@@ -198,12 +199,8 @@ export class AttendanceService {
       });
     }
 
-    if (!session.isOpen) {
-      throw new BadRequestException({
-        code: 'SESSION_CLOSED',
-        message: 'Attendance session is currently closed.',
-      });
-    }
+    const markedAt = input.client_marked_at ? new Date(input.client_marked_at) : new Date();
+    this.validateSessionBounds(session, markedAt, true);
 
     // 1. Verify cryptographic QR Pass
     const verifyResult = await this.idCardService.verifyQrPass(input.qr_token);
@@ -216,8 +213,14 @@ export class AttendanceService {
 
     const memberId = verifyResult.user_id;
 
-    // 2. Audience eligibility check
-    await this.assertAudienceEligibility(session, memberId);
+    // 2. Centralized validation engine (session status, active user standing, audience eligibility)
+    await this.validateAttendanceCandidate({
+      session,
+      memberId,
+      method: AttendanceMethod.QR_SCAN,
+      markedAt,
+      isOnline: true,
+    });
 
     // 3. Idempotent check by client_uuid
     const existingByClientUuid = await this.prisma.attendanceRecord.findUnique({
@@ -306,14 +309,18 @@ export class AttendanceService {
       });
     }
 
-    if (!session.isOpen) {
-      throw new BadRequestException({
-        code: 'SESSION_CLOSED',
-        message: 'Attendance session is currently closed.',
-      });
-    }
+    const markedAt = new Date();
 
-    // 1. Verify TOTP code (accept current step +/- 1 step)
+    // 1. Centralized validation engine (session status, active user standing, audience eligibility)
+    await this.validateAttendanceCandidate({
+      session,
+      memberId: input.member_id,
+      method: AttendanceMethod.ROTATING_CODE,
+      markedAt,
+      isOnline: true,
+    });
+
+    // 2. Verify TOTP code (accept current step +/- 1 step)
     const plainSecret = decryptAes256Gcm(session.totpSecret, env.APP_ENCRYPTION_KEY);
     const isCodeValid = verifyTotp(
       input.totp_code,
@@ -328,21 +335,6 @@ export class AttendanceService {
         message: 'Invalid or expired 6-digit attendance code.',
       });
     }
-
-    // 2. Member existence & active standing
-    const member = await this.prisma.user.findUnique({
-      where: { id: input.member_id },
-    });
-
-    if (!member || member.status !== UserStatus.ACTIVE) {
-      throw new BadRequestException({
-        code: 'INELIGIBLE_MEMBER',
-        message: 'Target member record is not in active standing.',
-      });
-    }
-
-    // 3. Audience eligibility check
-    await this.assertAudienceEligibility(session, input.member_id);
 
     // 4. Idempotent check by client_uuid
     const existingByClientUuid = await this.prisma.attendanceRecord.findUnique({
@@ -430,25 +422,17 @@ export class AttendanceService {
       });
     }
 
-    if (!session.isOpen) {
-      throw new BadRequestException({
-        code: 'SESSION_CLOSED',
-        message: 'Attendance session is currently closed.',
-      });
-    }
+    const markedAt = new Date();
 
-    const member = await this.prisma.user.findUnique({
-      where: { id: input.member_id },
+    // 1. Centralized validation engine (session status, active user standing, audience eligibility, manual notes)
+    await this.validateAttendanceCandidate({
+      session,
+      memberId: input.member_id,
+      method: AttendanceMethod.MANUAL,
+      markedAt,
+      isOnline: true,
+      notes: input.notes,
     });
-
-    if (!member || member.status !== UserStatus.ACTIVE) {
-      throw new BadRequestException({
-        code: 'INELIGIBLE_MEMBER',
-        message: 'Target member record is not in active standing.',
-      });
-    }
-
-    await this.assertAudienceEligibility(session, input.member_id);
 
     // Idempotent check
     const existingByClientUuid = await this.prisma.attendanceRecord.findUnique({
@@ -683,31 +667,79 @@ export class AttendanceService {
           continue;
         }
 
-        // 6. Record verified attendance
-        const rec = await this.prisma.attendanceRecord.create({
-          data: {
-            sessionId: session.id,
-            eventId: session.eventId,
-            subjectType: RecipientType.MEMBER,
-            subjectId: targetMemberId,
-            method: op.method,
-            status: AttendanceStatus.VERIFIED,
-            clientUuid: op.client_uuid,
-            clientMarkedAt,
-            verifiedAt: now,
-            markedById,
+        // 6. Centralized Validation Engine: Session status, User active standing, Audience eligibility, Manual notes
+        try {
+          await this.validateAttendanceCandidate({
+            session,
+            memberId: targetMemberId,
+            method: op.method as AttendanceMethod,
+            markedAt: clientMarkedAt,
+            isOnline: false,
             notes: op.notes,
-          },
-        });
+          });
+        } catch (valErr: unknown) {
+          const errMsg =
+            valErr instanceof HttpException
+              ? ((valErr.getResponse() as { message?: string })?.message ?? valErr.message)
+              : (valErr instanceof Error ? valErr.message : 'Validation failed.');
+          results.push({
+            client_uuid: op.client_uuid,
+            status: AttendanceStatus.REJECTED,
+            message: errMsg,
+          });
+          rejectedCount++;
+          continue;
+        }
 
-        // Update registration status
-        await this.prisma.registration.updateMany({
-          where: {
-            eventId: session.eventId,
-            userId: targetMemberId,
-            status: RegistrationStatus.REGISTERED,
-          },
-          data: { status: RegistrationStatus.ATTENDED },
+        // 7. Record verified attendance & audit log atomically within transaction
+        const rec = await this.prisma.$transaction(async (tx) => {
+          const created = await tx.attendanceRecord.create({
+            data: {
+              sessionId: session.id,
+              eventId: session.eventId,
+              subjectType: RecipientType.MEMBER,
+              subjectId: targetMemberId,
+              method: op.method,
+              status: AttendanceStatus.VERIFIED,
+              clientUuid: op.client_uuid,
+              clientMarkedAt,
+              verifiedAt: now,
+              markedById,
+              notes: op.notes,
+            },
+          });
+
+          await tx.registration.updateMany({
+            where: {
+              eventId: session.eventId,
+              userId: targetMemberId,
+              status: RegistrationStatus.REGISTERED,
+            },
+            data: { status: RegistrationStatus.ATTENDED },
+          });
+
+          await tx.auditLog.create({
+            data: {
+              actorId: markedById,
+              action:
+                op.method === AttendanceMethod.MANUAL
+                  ? 'ATTENDANCE_MANUAL_OVERRIDE'
+                  : 'ATTENDANCE_RECORDED',
+              targetType: 'attendance_record',
+              targetId: created.id,
+              afterJson: {
+                session_id: session.id,
+                event_id: session.eventId,
+                member_id: targetMemberId,
+                method: op.method,
+                client_uuid: op.client_uuid,
+                sync_mode: 'offline_reconciled',
+                notes: op.notes,
+              },
+            },
+          });
+
+          return created;
         });
 
         results.push({
@@ -734,6 +766,88 @@ export class AttendanceService {
       rejected_count: rejectedCount,
       results,
     };
+  }
+
+  /**
+   * Helper: enforce session open and time bounds
+   */
+  private validateSessionBounds(
+    session: { startsAt: Date; endsAt: Date; isOpen: boolean },
+    markedAt: Date,
+    isOnline: boolean,
+  ): void {
+    if (!session.isOpen) {
+      throw new BadRequestException({
+        code: 'SESSION_CLOSED',
+        message: 'Attendance session is currently closed.',
+      });
+    }
+
+    const now = new Date();
+    const gracePeriodMs = 30 * 60 * 1000; // 30-minute grace window past endsAt
+
+    if (isOnline) {
+      if (now.getTime() > session.endsAt.getTime() + gracePeriodMs) {
+        throw new BadRequestException({
+          code: 'SESSION_EXPIRED',
+          message: 'Attendance session window has concluded.',
+        });
+      }
+    } else {
+      if (markedAt.getTime() > session.endsAt.getTime() + gracePeriodMs) {
+        throw new BadRequestException({
+          code: 'SESSION_EXPIRED',
+          message: 'Attendance recorded after session end time.',
+        });
+      }
+    }
+  }
+
+  /**
+   * Centralized Attendance Validation Engine (TASK-022 / B18 / F07)
+   * Enforces unified validation rules across online check-ins (QR, TOTP, Manual)
+   * and offline batch synchronization.
+   */
+  async validateAttendanceCandidate(params: {
+    session: { id: string; eventId: string; audience: string; startsAt: Date; endsAt: Date; isOpen: boolean };
+    memberId: string;
+    method: AttendanceMethod;
+    markedAt: Date;
+    isOnline: boolean;
+    notes?: string;
+  }): Promise<{ member: { id: string; status: string } }> {
+    const { session, memberId, method, markedAt, isOnline, notes } = params;
+
+    // 1. Session Open & Time Bounds
+    this.validateSessionBounds(session, markedAt, isOnline);
+
+    // 2. Active Member Existence & Standing
+    const member = await this.prisma.user.findUnique({
+      where: { id: memberId },
+      select: { id: true, status: true },
+    });
+
+    if (!member || member.status !== UserStatus.ACTIVE) {
+      throw new BadRequestException({
+        code: 'INELIGIBLE_MEMBER',
+        message: 'Target member record is not in active standing.',
+      });
+    }
+
+    // 3. Audience Tier Eligibility
+    await this.assertAudienceEligibility(session, memberId);
+
+    // 4. Mandatory Manual Notes Validation
+    if (method === AttendanceMethod.MANUAL) {
+      if (!notes || notes.trim().length < 3) {
+        throw new BadRequestException({
+          code: 'MISSING_MANUAL_NOTES',
+          message: 'Manual attendance override requires a mandatory verification reason (minimum 3 characters).',
+        });
+      }
+    }
+
+    return { member };
   }
 
   /**

@@ -170,6 +170,7 @@ export class AttendanceController {
     @Body() rawBody: unknown,
     @ReqUser() currentUser: CurrentUser,
   ) {
+    this.rateLimiter.assertLimit(`sync-offline:${currentUser.id}`, 30, 60 * 1000);
     const parseResult = BatchSyncAttendanceSchema.safeParse(rawBody);
     if (!parseResult.success) {
       throw new BadRequestException({
