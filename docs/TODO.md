@@ -27,14 +27,14 @@ This document is the unified, authoritative remediation master plan for the CSI 
 | **Phase 1** | Build Pipeline, Toolchain & Runtime Initialization | 5 | 5 | 0 | 0 |
 | **Phase 2** | Core Domain Logic, Event Capacities & Role Boundaries | 8 | 8 | 0 | 0 |
 | **Phase 3** | Attendance, Offline Sync & Scanner System | 7 | 7 | 0 | 0 |
-| **Phase 4** | Document Engine, Batch Processing & File Storage Durability | 9 | 0 | 0 | 9 |
+| **Phase 4** | Document Engine, Batch Processing & File Storage Durability | 9 | 1 | 0 | 8 |
 | **Phase 5** | Annual Rollover, Checklists, Workspaces & Transactions | 5 | 0 | 0 | 5 |
 | **Phase 6** | Privacy, Data Protection, DPDP & Retention System | 4 | 1 | 0 | 3 |
 | **Phase 7** | Network Security, HTTP Headers, CSRF & Rate Limiting | 6 | 0 | 0 | 6 |
 | **Phase 8** | Database, Disaster Recovery, Backup & Archive Safety | 7 | 4 | 1 | 2 |
 | **Phase 9** | API Validation, Error Handling, Client Resilience & E2E | 4 | 0 | 0 | 4 |
 | **Phase 10** | Production Operations, Deployment Recipes & Documentation | 5 | 0 | 0 | 5 |
-| **TOTAL** | **Comprehensive Full-Platform Remediation** | **66** | **31** | **0** | **35** |
+| **TOTAL** | **Comprehensive Full-Platform Remediation** | **66** | **32** | **0** | **34** |
 
 ---
 
@@ -598,12 +598,31 @@ This document is the unified, authoritative remediation master plan for the CSI 
 
 ### Phase 4: Document Engine, Batch Processing & File Storage Durability
 
-- [ ] **TASK-027 [HIGH] [B16 / HR-002]: Local Storage Durability & Persistent Storage Abstraction**
+- [x] **TASK-027 [HIGH] [B16 / HR-002]: Local Storage Durability & Persistent Storage Abstraction**
   - **Severity:** High (Single Point of Failure / Scalability Blocker)
+  - **Completed:**
+    - Designed unified storage interface `IStorageProvider` in `apps/api/src/common/storage/storage-provider.interface.ts` supporting `put`, `get`, `putStream`, `getStream`, `delete`, `exists`, and `getSignedUrl`.
+    - Implemented `LocalStorageProvider` with atomic temporary-file writes (`temp file + atomic rename`) and strict path jail containment (`assertPathContained`) preventing directory traversal attacks.
+    - Implemented `S3StorageProvider` with native AWS SigV4 request and presigned URL signing supporting AWS S3, Cloudflare R2, and MinIO endpoints.
+    - Implemented `@Global()` `StorageModule` and injectable `StorageService` in `apps/api/src/common/storage/storage.service.ts` dynamically selecting driver based on `STORAGE_DRIVER` (`local` vs `s3`).
+    - Updated `apps/api/src/config/env.ts` to allow `STORAGE_DRIVER=s3` in production with strict S3 configuration validation (`S3_BUCKET`, `S3_REGION`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`).
+    - Refactored `CertificateStorageService`, `PassportStorageService`, and `WorkspaceAssetStorageService` from synchronous Node `fs` operations to asynchronous, atomic storage operations delegating to the unified storage provider.
+    - Added comprehensive unit tests in `tests/unit/api/common/storage/storage.service.spec.ts` (16/16 passed) and updated `tests/unit/api/config/env.spec.ts` (16/16 passed). Monorepo test suite (680/680) and live DB E2E tests (190/190) all 100% passing.
   - **Affected Files:**
     - `apps/api/src/config/env.ts`
-    - `apps/api/src/common/storage/storage-path.util.ts`
+    - `apps/api/src/common/storage/storage-provider.interface.ts` (new)
+    - `apps/api/src/common/storage/local-storage.provider.ts` (new)
+    - `apps/api/src/common/storage/s3-storage.provider.ts` (new)
     - `apps/api/src/common/storage/storage.service.ts` (new)
+    - `apps/api/src/common/storage/storage.module.ts` (new)
+    - `apps/api/src/common/storage/storage-path.util.ts`
+    - `apps/api/src/common/storage/index.ts` (new)
+    - `apps/api/src/app.module.ts`
+    - `apps/api/src/modules/certificates/storage/certificate-storage.service.ts`
+    - `apps/api/src/modules/passports/services/passport-storage.service.ts`
+    - `apps/api/src/modules/workspaces/workspace-asset-storage.service.ts`
+    - `tests/unit/api/config/env.spec.ts`
+    - `tests/unit/api/common/storage/storage.service.spec.ts` (new)
   - **Problem:** `env.ts` explicitly rejects `STORAGE_DRIVER=s3` as unimplemented. All certificates, passports, and assets are written synchronously with Node `fs` to local disk. This breaks horizontal scaling, container platforms, and rolling deployments.
   - **Remediation Plan:**
     1. Design a clean storage interface (`IStorageProvider`) with methods `putStream`, `getStream`, `delete`, `exists`, `getSignedUrl`.

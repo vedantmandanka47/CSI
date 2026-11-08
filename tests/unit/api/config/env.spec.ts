@@ -178,16 +178,30 @@ describe('Environment Schema Validation (ARCH-16, DEP-14, AUD-SEC-01)', () => {
       }
     });
 
-    it('rejects unsupported S3 storage driver in production', () => {
+    it('rejects S3 storage driver in production if S3 credentials/bucket are missing', () => {
       const s3Prod = {
         ...validProdEnv,
         STORAGE_DRIVER: 's3',
+        S3_BUCKET: undefined,
       };
       const result = EnvSchema.safeParse(s3Prod);
       expect(result.success).toBe(false);
       if (!result.success) {
-        expect(result.error.issues.some((i) => i.path.includes('STORAGE_DRIVER'))).toBe(true);
+        expect(result.error.issues.some((i) => i.path.includes('S3_BUCKET'))).toBe(true);
       }
+    });
+
+    it('accepts S3 storage driver in production with complete S3 configuration', () => {
+      const validS3Prod = {
+        ...validProdEnv,
+        STORAGE_DRIVER: 's3',
+        S3_BUCKET: 'csi-production-storage',
+        S3_REGION: 'ap-south-1',
+        S3_ACCESS_KEY_ID: 'AKIAIOSFODNN7EXAMPLE',
+        S3_SECRET_ACCESS_KEY: 'wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY',
+      };
+      const result = EnvSchema.safeParse(validS3Prod);
+      expect(result.success).toBe(true);
     });
 
     it('rejects invalid, non-ed25519, or mismatched Ed25519 key-pair in production', () => {

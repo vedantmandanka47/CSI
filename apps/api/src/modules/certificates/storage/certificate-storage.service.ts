@@ -1,8 +1,9 @@
-import { Injectable, Logger, BadRequestException, NotFoundException } from '@nestjs/common';
-import { existsSync, mkdirSync, writeFileSync, readFileSync, unlinkSync } from 'fs';
-import { join } from 'path';
+import { Injectable, Logger, BadRequestException, NotFoundException, Optional } from '@nestjs/common';
 import { createHash } from 'crypto';
-import { resolveStorageDirectory, assertPathContained, isPathContained } from '../../../common/storage/storage-path.util.js';
+import { resolveStorageDirectory, assertPathContained } from '../../../common/storage/storage-path.util.js';
+import { IStorageProvider } from '../../../common/storage/storage-provider.interface.js';
+import { LocalStorageProvider } from '../../../common/storage/local-storage.provider.js';
+import { StorageService } from '../../../common/storage/storage.service.js';
 
 export interface SavedCertificateFile {
   storagePath: string;
@@ -14,13 +15,23 @@ export interface SavedCertificateFile {
 export class CertificateStorageService {
   private readonly logger = new Logger(CertificateStorageService.name);
   private readonly storageRoot: string;
+  private readonly storage: IStorageProvider;
 
-  constructor() {
+  constructor(@Optional() private readonly storageService?: StorageService) {
     this.storageRoot = resolveStorageDirectory('certificates');
+    this.storage = storageService ?? new LocalStorageProvider(this.storageRoot);
+  }
+
+  private getStorageKey(relativePath: string): string {
+    const sanitized = relativePath.replace(/\\/g, '/').replace(/^\/+/, '');
+    if (this.storageService) {
+      return `certificates/${sanitized}`;
+    }
+    return sanitized;
   }
 
   /**
-   * Persists a rendered PDF buffer to disk with SHA-256 integrity hash.
+   * Persists a rendered PDF buffer to storage with SHA-256 integrity hash and atomic write.
    */
   async saveCertificatePdf(
     certificateId: string,
@@ -32,18 +43,15 @@ export class CertificateStorageService {
     }
 
     const subDir = batchId && /^[a-zA-Z0-9_\-]+$/.test(batchId) ? batchId : 'direct';
-    const targetDir = assertPathContained(join(this.storageRoot, subDir), this.storageRoot);
+    const relativePath = `${subDir}/${certificateId}.pdf`;
+    const key = this.getStorageKey(relativePath);
 
-    if (!existsSync(targetDir)) {
-      mkdirSync(targetDir, { recursive: true });
-    }
+    // Validate path containment against jail
+    assertPathContained(relativePath, '.', 'Invalid certificate storage path.');
 
-    const targetFile = assertPathContained(join(targetDir, `${certificateId}.pdf`), this.storageRoot);
-
-    writeFileSync(targetFile, pdfBuffer);
+    await this.storage.put(key, pdfBuffer, { contentType: 'application/pdf' });
 
     const fileHash = createHash('sha256').update(pdfBuffer).digest('hex');
-    const relativePath = join(subDir, `${certificateId}.pdf`).replace(/\\/g, '/');
 
     return {
       storagePath: relativePath,
@@ -53,20 +61,20 @@ export class CertificateStorageService {
   }
 
   /**
-   * Reads a stored certificate PDF buffer from disk verifying path jail.
+   * Reads a stored certificate PDF buffer from storage verifying path jail.
    */
   async getCertificatePdf(storagePath: string): Promise<Buffer> {
-    const absolutePath = assertPathContained(
-      join(this.storageRoot, storagePath),
-      this.storageRoot,
-      'Invalid certificate storage path.',
-    );
+    assertPathContained(storagePath, '.', 'Invalid certificate storage path.');
+    const key = this.getStorageKey(storagePath);
 
-    if (!existsSync(absolutePath)) {
-      throw new NotFoundException('Certificate PDF file not found in storage.');
+    try {
+      return await this.storage.get(key);
+    } catch (err: unknown) {
+      if (err instanceof NotFoundException) {
+        throw new NotFoundException('Certificate PDF file not found in storage.');
+      }
+      throw err;
     }
-
-    return readFileSync(absolutePath);
   }
 
   /**
@@ -74,8 +82,19 @@ export class CertificateStorageService {
    */
   hasCertificatePdf(storagePath?: string | null): boolean {
     if (!storagePath) return false;
-    const absolutePath = join(this.storageRoot, storagePath);
-    return isPathContained(absolutePath, this.storageRoot) && existsSync(absolutePath);
+    try {
+      assertPathContained(storagePath, '.', 'Invalid certificate storage path.');
+    } catch {
+      return false;
+    }
+    const key = this.getStorageKey(storagePath);
+    if (this.storage instanceof LocalStorageProvider) {
+      return this.storage.existsLocalSync(key);
+    }
+    if (this.storageService) {
+      return this.storageService.existsLocalSync(key);
+    }
+    return false;
   }
 
   /**
@@ -95,14 +114,17 @@ export class CertificateStorageService {
    * Deletes a certificate PDF from storage.
    */
   async deleteCertificatePdf(storagePath: string): Promise<void> {
-    const absolutePath = join(this.storageRoot, storagePath);
-    if (isPathContained(absolutePath, this.storageRoot) && existsSync(absolutePath)) {
-      try {
-        unlinkSync(absolutePath);
-      } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : String(err);
-        this.logger.warn(`Failed to delete storage file ${absolutePath}: ${msg}`);
-      }
+    try {
+      assertPathContained(storagePath, '.', 'Invalid certificate storage path.');
+    } catch {
+      return;
+    }
+    const key = this.getStorageKey(storagePath);
+    try {
+      await this.storage.delete(key);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      this.logger.warn(`Failed to delete certificate storage key ${key}: ${msg}`);
     }
   }
 }

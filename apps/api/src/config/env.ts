@@ -172,12 +172,34 @@ export const EnvSchema = z
       }
 
       if (data.STORAGE_DRIVER === 's3') {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ['STORAGE_DRIVER'],
-          message:
-            'S3 storage driver is not implemented. Deployments must use persistent local storage with STORAGE_DRIVER=local and STORAGE_ROOT_DIR set to a persistent volume mount.',
-        });
+        if (!data.S3_BUCKET) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['S3_BUCKET'],
+            message: 'S3_BUCKET must be explicitly specified when using S3 storage in production (DEP-14)',
+          });
+        }
+        if (!data.S3_REGION) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['S3_REGION'],
+            message: 'S3_REGION must be explicitly specified when using S3 storage in production (DEP-14)',
+          });
+        }
+        if (!data.S3_ACCESS_KEY_ID) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['S3_ACCESS_KEY_ID'],
+            message: 'S3_ACCESS_KEY_ID must be explicitly specified when using S3 storage in production (DEP-14)',
+          });
+        }
+        if (!data.S3_SECRET_ACCESS_KEY) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['S3_SECRET_ACCESS_KEY'],
+            message: 'S3_SECRET_ACCESS_KEY must be explicitly specified when using S3 storage in production (DEP-14)',
+          });
+        }
       }
     }
   });

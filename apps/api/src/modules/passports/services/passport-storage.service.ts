@@ -1,8 +1,9 @@
-import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
-import { existsSync, writeFileSync, readFileSync, unlinkSync } from 'fs';
-import { join } from 'path';
+import { Injectable, BadRequestException, NotFoundException, Optional } from '@nestjs/common';
 import { createHash } from 'crypto';
-import { resolveStorageDirectory, assertPathContained, isPathContained } from '../../../common/storage/storage-path.util.js';
+import { resolveStorageDirectory, assertPathContained } from '../../../common/storage/storage-path.util.js';
+import { IStorageProvider } from '../../../common/storage/storage-provider.interface.js';
+import { LocalStorageProvider } from '../../../common/storage/local-storage.provider.js';
+import { StorageService } from '../../../common/storage/storage.service.js';
 
 export interface SavedPassportFile {
   storagePath: string;
@@ -13,13 +14,23 @@ export interface SavedPassportFile {
 @Injectable()
 export class PassportStorageService {
   private readonly storageRoot: string;
+  private readonly storage: IStorageProvider;
 
-  constructor() {
+  constructor(@Optional() private readonly storageService?: StorageService) {
     this.storageRoot = resolveStorageDirectory('passports');
+    this.storage = storageService ?? new LocalStorageProvider(this.storageRoot);
+  }
+
+  private getStorageKey(relativePath: string): string {
+    const sanitized = relativePath.replace(/\\/g, '/').replace(/^\/+/, '');
+    if (this.storageService) {
+      return `passports/${sanitized}`;
+    }
+    return sanitized;
   }
 
   /**
-   * Persists a rendered passport PDF buffer to disk with SHA-256 integrity hash.
+   * Persists a rendered passport PDF buffer to storage with SHA-256 integrity hash and atomic write.
    */
   async savePassportPdf(
     passportId: string,
@@ -29,15 +40,13 @@ export class PassportStorageService {
       throw new BadRequestException('Invalid passport ID for storage path.');
     }
 
-    const targetFile = assertPathContained(
-      join(this.storageRoot, `${passportId}.pdf`),
-      this.storageRoot,
-    );
+    const relativePath = `${passportId}.pdf`;
+    assertPathContained(relativePath, '.', 'Invalid passport storage path.');
+    const key = this.getStorageKey(relativePath);
 
-    writeFileSync(targetFile, pdfBuffer);
+    await this.storage.put(key, pdfBuffer, { contentType: 'application/pdf' });
 
     const fileHash = createHash('sha256').update(pdfBuffer).digest('hex');
-    const relativePath = `${passportId}.pdf`;
 
     return {
       storagePath: relativePath,
@@ -47,20 +56,20 @@ export class PassportStorageService {
   }
 
   /**
-   * Reads a stored passport PDF buffer from disk verifying path jail.
+   * Reads a stored passport PDF buffer from storage verifying path jail.
    */
   async getPassportPdf(storagePath: string): Promise<Buffer> {
-    const absolutePath = assertPathContained(
-      join(this.storageRoot, storagePath),
-      this.storageRoot,
-      'Invalid passport storage path.',
-    );
+    assertPathContained(storagePath, '.', 'Invalid passport storage path.');
+    const key = this.getStorageKey(storagePath);
 
-    if (!existsSync(absolutePath)) {
-      throw new NotFoundException('Passport PDF file not found in storage.');
+    try {
+      return await this.storage.get(key);
+    } catch (err: unknown) {
+      if (err instanceof NotFoundException) {
+        throw new NotFoundException('Passport PDF file not found in storage.');
+      }
+      throw err;
     }
-
-    return readFileSync(absolutePath);
   }
 
   /**
@@ -68,8 +77,19 @@ export class PassportStorageService {
    */
   hasPassportPdf(storagePath?: string | null): boolean {
     if (!storagePath) return false;
-    const absolutePath = join(this.storageRoot, storagePath);
-    return isPathContained(absolutePath, this.storageRoot) && existsSync(absolutePath);
+    try {
+      assertPathContained(storagePath, '.', 'Invalid passport storage path.');
+    } catch {
+      return false;
+    }
+    const key = this.getStorageKey(storagePath);
+    if (this.storage instanceof LocalStorageProvider) {
+      return this.storage.existsLocalSync(key);
+    }
+    if (this.storageService) {
+      return this.storageService.existsLocalSync(key);
+    }
+    return false;
   }
 
   /**
@@ -96,16 +116,17 @@ export class PassportStorageService {
    * Deletes a passport PDF from storage (e.g. for testing or cleanup).
    */
   async deletePassportPdf(storagePath: string): Promise<boolean> {
-    const absolutePath = assertPathContained(
-      join(this.storageRoot, storagePath),
-      this.storageRoot,
-      'Invalid passport storage path.',
-    );
-
-    if (existsSync(absolutePath)) {
-      unlinkSync(absolutePath);
-      return true;
+    try {
+      assertPathContained(storagePath, '.', 'Invalid passport storage path.');
+    } catch {
+      return false;
     }
-    return false;
+    const key = this.getStorageKey(storagePath);
+    try {
+      await this.storage.delete(key);
+      return true;
+    } catch {
+      return false;
+    }
   }
 }

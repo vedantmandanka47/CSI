@@ -1,9 +1,11 @@
-import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
-import { existsSync, mkdirSync, writeFileSync, readFileSync, unlinkSync } from 'fs';
-import { join, extname } from 'path';
+import { Injectable, BadRequestException, NotFoundException, Optional } from '@nestjs/common';
+import { extname } from 'path';
 import { createHash } from 'crypto';
 import { ErrorCode, MAX_ASSET_FILE_SIZE_BYTES } from '@csi/shared';
-import { resolveStorageDirectory, assertPathContained, isPathContained } from '../../common/storage/storage-path.util.js';
+import { resolveStorageDirectory, assertPathContained } from '../../common/storage/storage-path.util.js';
+import { IStorageProvider } from '../../common/storage/storage-provider.interface.js';
+import { LocalStorageProvider } from '../../common/storage/local-storage.provider.js';
+import { StorageService } from '../../common/storage/storage.service.js';
 
 export interface SavedAssetFile {
   storagePath: string;
@@ -16,9 +18,19 @@ export interface SavedAssetFile {
 export class WorkspaceAssetStorageService {
   private readonly storageRoot: string;
   private readonly maxFileSizeBytes = MAX_ASSET_FILE_SIZE_BYTES; // 10 MB limit (RR:SEC-09)
+  private readonly storage: IStorageProvider;
 
-  constructor() {
+  constructor(@Optional() private readonly storageService?: StorageService) {
     this.storageRoot = resolveStorageDirectory('workspaces/assets');
+    this.storage = storageService ?? new LocalStorageProvider(this.storageRoot);
+  }
+
+  private getStorageKey(relativePath: string): string {
+    const sanitized = relativePath.replace(/\\/g, '/').replace(/^\/+/, '');
+    if (this.storageService) {
+      return `workspaces/assets/${sanitized}`;
+    }
+    return sanitized;
   }
 
   /**
@@ -107,7 +119,7 @@ export class WorkspaceAssetStorageService {
   }
 
   /**
-   * Persists an asset file to disk in a committee-jailed folder.
+   * Persists an asset file to storage in a committee-jailed folder with atomic writes.
    */
   async saveAssetFile(
     committeeId: string,
@@ -128,27 +140,15 @@ export class WorkspaceAssetStorageService {
 
     // Sanitize original file name
     const sanitizedName = originalFileName.replace(/[^a-zA-Z0-9_.-]/g, '_');
-    const committeeDir = assertPathContained(
-      join(this.storageRoot, committeeId),
-      this.storageRoot,
-      'Path traversal attempt detected in committee storage directory.',
-    );
-
-    if (!existsSync(committeeDir)) {
-      mkdirSync(committeeDir, { recursive: true });
-    }
-
     const fileNameOnDisk = `${assetId}_${sanitizedName}`;
-    const targetFile = assertPathContained(
-      join(committeeDir, fileNameOnDisk),
-      committeeDir,
-      'Path traversal attempt detected in target file path.',
-    );
+    const relativeStoragePath = `${committeeId}/${fileNameOnDisk}`;
 
-    writeFileSync(targetFile, fileBuffer);
+    assertPathContained(relativeStoragePath, '.', 'Path traversal attempt detected in target file path.');
+
+    const key = this.getStorageKey(relativeStoragePath);
+    await this.storage.put(key, fileBuffer, { contentType: verifiedMimeType });
 
     const fileHash = createHash('sha256').update(fileBuffer).digest('hex');
-    const relativeStoragePath = `${committeeId}/${fileNameOnDisk}`;
 
     return {
       storagePath: relativeStoragePath,
@@ -159,42 +159,60 @@ export class WorkspaceAssetStorageService {
   }
 
   /**
-   * Reads an asset file buffer from disk verifying path jail.
+   * Reads an asset file buffer from storage verifying path jail.
    */
   async getAssetFile(storagePath: string): Promise<Buffer> {
-    const absolutePath = assertPathContained(
-      join(this.storageRoot, storagePath),
-      this.storageRoot,
-      'Invalid asset storage path.',
-    );
+    assertPathContained(storagePath, '.', 'Invalid asset storage path.');
+    const key = this.getStorageKey(storagePath);
 
-    if (!existsSync(absolutePath)) {
-      throw new NotFoundException({
-        code: ErrorCode.ASSET_FILE_UNAVAILABLE,
-        message: 'Asset file not found in storage.',
-      });
+    try {
+      return await this.storage.get(key);
+    } catch (err: unknown) {
+      if (err instanceof NotFoundException) {
+        throw new NotFoundException({
+          code: ErrorCode.ASSET_FILE_UNAVAILABLE,
+          message: 'Asset file not found in storage.',
+        });
+      }
+      throw err;
     }
-
-    return readFileSync(absolutePath);
   }
 
   /**
-   * Verifies file existence on disk.
+   * Verifies file existence in storage.
    */
   hasAssetFile(storagePath?: string | null): boolean {
     if (!storagePath) return false;
-    const absolutePath = join(this.storageRoot, storagePath);
-    return isPathContained(absolutePath, this.storageRoot) && existsSync(absolutePath);
+    try {
+      assertPathContained(storagePath, '.', 'Invalid asset storage path.');
+    } catch {
+      return false;
+    }
+    const key = this.getStorageKey(storagePath);
+    if (this.storage instanceof LocalStorageProvider) {
+      return this.storage.existsLocalSync(key);
+    }
+    if (this.storageService) {
+      return this.storageService.existsLocalSync(key);
+    }
+    return false;
   }
 
   /**
-   * Deletes an asset file from disk.
+   * Deletes an asset file from storage.
    */
   async deleteAssetFile(storagePath?: string | null): Promise<void> {
     if (!storagePath) return;
-    const absolutePath = join(this.storageRoot, storagePath);
-    if (isPathContained(absolutePath, this.storageRoot) && existsSync(absolutePath)) {
-      unlinkSync(absolutePath);
+    try {
+      assertPathContained(storagePath, '.', 'Invalid asset storage path.');
+    } catch {
+      return;
+    }
+    const key = this.getStorageKey(storagePath);
+    try {
+      await this.storage.delete(key);
+    } catch {
+      // Ignored: best-effort deletion of unreferenced assets
     }
   }
 }

@@ -1,4 +1,4 @@
-import { resolve, join, normalize, relative, isAbsolute } from 'path';
+import { resolve, join, normalize, relative, isAbsolute, basename, sep } from 'path';
 import { existsSync, mkdirSync } from 'fs';
 import { BadRequestException } from '@nestjs/common';
 import { env } from '../../config/env.js';
@@ -14,7 +14,9 @@ export function resolveStorageDirectory(subDirectory: string): string {
     baseRoot = resolve(env.STORAGE_ROOT_DIR);
   } else {
     const cwd = process.cwd();
-    if (existsSync(resolve(cwd, 'apps/api'))) {
+    if (basename(cwd) === 'api' || cwd.endsWith('apps' + sep + 'api') || cwd.endsWith('apps/api')) {
+      baseRoot = resolve(cwd, 'storage');
+    } else if (existsSync(resolve(cwd, 'apps/api'))) {
       baseRoot = resolve(cwd, 'apps/api/storage');
     } else {
       baseRoot = resolve(cwd, 'storage');

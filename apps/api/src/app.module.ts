@@ -27,6 +27,7 @@ import { TermsModule } from './modules/terms/terms.module.js';
 import { MaintenanceModule } from './modules/maintenance/maintenance.module.js';
 import { PrismaModule } from './infra/prisma/prisma.module.js';
 import { EmailModule } from './infra/email/email.module.js';
+import { StorageModule } from './common/storage/storage.module.js';
 
 @Module({
   imports: [
@@ -83,6 +84,7 @@ import { EmailModule } from './infra/email/email.module.js';
     MaintenanceModule,
     PrismaModule,
     EmailModule,
+    StorageModule,
   ],
   providers: [
     {
