@@ -38,13 +38,18 @@ export default function IdCardPage() {
     setErrorCode(null);
 
     try {
-      const response = await apiClient.get<IdCardData>('/me/id-card');
-      setCardData(response);
+      const response = await apiClient.get<IdCardData | { data: IdCardData }>('/me/id-card');
+      const card =
+        response && typeof response === 'object' && 'data' in response && response.data
+          ? response.data
+          : (response as IdCardData);
+
+      setCardData(card);
       setCountdown(60);
 
       // Generate dynamic QR Code Data URL
-      if (response.qr_token) {
-        const url = await QRCode.toDataURL(response.qr_token, {
+      if (card?.qr_token) {
+        const url = await QRCode.toDataURL(card.qr_token, {
           width: 260,
           margin: 1,
         });
@@ -248,7 +253,7 @@ export default function IdCardPage() {
 
                 <div className="inline-flex items-center gap-1.5 rounded-pill bg-success/10 px-3 py-1 text-xs font-semibold text-success">
                   <CheckCircle2 className="h-3.5 w-3.5" />
-                  <span>{cardData.status.toUpperCase()}</span>
+                  <span>{(cardData.status || 'ACTIVE').toUpperCase()}</span>
                 </div>
               </div>
 
@@ -277,14 +282,14 @@ export default function IdCardPage() {
                     <GraduationCap className="h-3.5 w-3.5" />
                     <span>Branch</span>
                   </div>
-                  <p className="mt-1 text-xs font-semibold text-text">{cardData.branch}</p>
+                  <p className="mt-1 text-xs font-semibold text-text">{cardData.branch || 'Engineering & Technology'}</p>
                 </div>
                 <div>
                   <div className="flex items-center gap-1 text-xs text-text-muted">
                     <Calendar className="h-3.5 w-3.5" />
                     <span>Academic Year</span>
                   </div>
-                  <p className="mt-1 text-xs font-semibold text-text">Year {cardData.year}</p>
+                  <p className="mt-1 text-xs font-semibold text-text">Year {cardData.year || 1}</p>
                 </div>
                 <div className="col-span-2 sm:col-span-1">
                   <div className="flex items-center gap-1 text-xs text-text-muted">
@@ -292,10 +297,12 @@ export default function IdCardPage() {
                     <span>Valid Until</span>
                   </div>
                   <p className="mt-1 text-xs font-semibold text-text">
-                    {new Date(cardData.valid_until).toLocaleDateString('en-IN', {
-                      month: 'short',
-                      year: 'numeric',
-                    })}
+                    {cardData.valid_until
+                      ? new Date(cardData.valid_until).toLocaleDateString('en-IN', {
+                          month: 'short',
+                          year: 'numeric',
+                        })
+                      : 'N/A'}
                   </p>
                 </div>
               </div>
@@ -303,7 +310,7 @@ export default function IdCardPage() {
               {/* Roles */}
               <div className="mt-4 flex flex-wrap items-center gap-2">
                 <span className="text-xs text-text-muted">Assigned Roles:</span>
-                {cardData.roles.map((role) => (
+                {(cardData.roles || []).map((role) => (
                   <span
                     key={role}
                     className="rounded-md border border-border bg-surface px-2.5 py-0.5 font-mono text-[11px] font-semibold uppercase text-text"

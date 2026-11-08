@@ -33,6 +33,7 @@
     "db:seed": "npm run db:seed --workspace=apps/api",
     "db:reset:dev": "tsx scripts/database/db-reset-dev.ts",
     "bootstrap:admin": "tsx scripts/setup/bootstrap-admin.ts",
+    "seed:dev-users": "tsx scripts/development/setup-test-users.ts",
     "gen:secrets": "node scripts/development/gen-secrets.mjs",
     "check:colors": "node scripts/validation/check-hardcoded-colors.mjs",
     "check:contrast": "node scripts/validation/check-contrast.mjs",

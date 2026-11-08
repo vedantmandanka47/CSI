@@ -31,8 +31,12 @@ export default function MemberDashboardPage() {
     setLoading(true);
     setErrorMessage(null);
     try {
-      const response = await apiClient.get<MemberDashboardData>('/me/dashboard');
-      setDashboard(response);
+      const response = await apiClient.get<MemberDashboardData | { data: MemberDashboardData }>('/me/dashboard');
+      const data =
+        response && typeof response === 'object' && 'data' in response && response.data
+          ? response.data
+          : (response as MemberDashboardData);
+      setDashboard(data);
     } catch (err: unknown) {
       if (err instanceof ApiError) {
         setErrorMessage(err.message);
@@ -163,7 +167,7 @@ export default function MemberDashboardPage() {
                   <span>Standing:</span>
                   <span className="inline-flex items-center gap-1 font-semibold text-success">
                     <CheckCircle2 className="h-3 w-3" />
-                    <span>{dashboard.profile.status.toUpperCase()}</span>
+                    <span>{(dashboard.profile.status || 'ACTIVE').toUpperCase()}</span>
                   </span>
                 </div>
               </div>
@@ -246,12 +250,12 @@ export default function MemberDashboardPage() {
                     </h2>
                   </div>
                   <span className="rounded-pill bg-surface-raised px-2.5 py-0.5 text-xs font-semibold text-text-muted">
-                    {dashboard.upcoming_events.length}
+                    {(dashboard.upcoming_events || []).length}
                   </span>
                 </div>
 
                 <div className="mt-6">
-                  {dashboard.upcoming_events.length === 0 ? (
+                  {(!dashboard.upcoming_events || dashboard.upcoming_events.length === 0) ? (
                     <div className="rounded-lg bg-surface-raised p-8 text-center">
                       <Calendar className="mx-auto h-10 w-10 text-text-muted opacity-40" />
                       <h4 className="mt-2 font-display text-sm font-semibold text-text">
@@ -270,7 +274,7 @@ export default function MemberDashboardPage() {
                     </div>
                   ) : (
                     <div className="grid grid-cols-1 gap-4">
-                      {dashboard.upcoming_events.map((evt) => (
+                      {(dashboard.upcoming_events || []).map((evt) => (
                         <div
                           key={evt.registration_id}
                           className="flex flex-col gap-4 rounded-lg border border-border bg-surface p-4 transition-colors hover:bg-surface-raised/40 sm:flex-row sm:items-center sm:justify-between"
@@ -340,12 +344,12 @@ export default function MemberDashboardPage() {
                     </h2>
                   </div>
                   <span className="rounded-pill bg-surface-raised px-2.5 py-0.5 text-xs font-semibold text-text-muted">
-                    {dashboard.past_registrations.length}
+                    {(dashboard.past_registrations || []).length}
                   </span>
                 </div>
 
                 <div className="mt-6">
-                  {dashboard.past_registrations.length === 0 ? (
+                  {(!dashboard.past_registrations || dashboard.past_registrations.length === 0) ? (
                     <p className="text-center text-xs text-text-muted py-6">
                       No past event history recorded yet.
                     </p>
@@ -361,7 +365,7 @@ export default function MemberDashboardPage() {
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-border">
-                          {dashboard.past_registrations.map((past) => (
+                          {(dashboard.past_registrations || []).map((past) => (
                             <tr key={past.registration_id} className="hover:bg-surface-raised/40">
                               <td className="px-4 py-3 font-semibold text-text">
                                 <Link

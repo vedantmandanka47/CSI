@@ -31,8 +31,12 @@ export default function StudentPassportPage() {
     setLoading(true);
     setErrorMessage(null);
     try {
-      const response = await apiClient.get<StudentPassportResponse>('/me/passport');
-      setPassport(response);
+      const response = await apiClient.get<StudentPassportResponse | { data: StudentPassportResponse }>('/me/passport');
+      const data =
+        response && typeof response === 'object' && 'data' in response && response.data
+          ? response.data
+          : (response as StudentPassportResponse);
+      setPassport(data);
     } catch (err: unknown) {
       if (err instanceof ApiError) {
         setErrorMessage(err.message);
