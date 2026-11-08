@@ -2,8 +2,8 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import cookieParser from 'cookie-parser';
-import { writeFileSync, readFileSync, existsSync } from 'fs';
-import { resolve } from 'path';
+import { writeFileSync, readFileSync } from 'fs';
+import { resolve, basename } from 'path';
 import { PDFDocument } from 'pdf-lib';
 import { AppModule } from '../../apps/api/src/app.module.js';
 import { PrismaService } from '../../apps/api/src/infra/prisma/prisma.service.js';
@@ -365,9 +365,10 @@ describe('Certificate Verification & Cryptographic Anti-Forgery Subsystem (E2E) 
   describe('2. Document Tamper & Cryptographic Checksum Verification', () => {
     it('should detect document integrity mismatch when stored PDF is tampered with', async () => {
       const cwd = process.cwd();
-      const storageRoot = existsSync(resolve(cwd, 'apps/api'))
-        ? resolve(cwd, 'apps/api/storage/certificates')
-        : resolve(cwd, 'storage/certificates');
+      const storageRoot =
+        cwd.endsWith('apps/api') || cwd.endsWith('apps\\api') || basename(cwd) === 'api'
+          ? resolve(cwd, 'storage/certificates')
+          : resolve(cwd, 'apps/api/storage/certificates');
       const fullStoragePath = resolve(storageRoot, issuedStoragePath);
       const originalPdfBytes = readFileSync(fullStoragePath);
 

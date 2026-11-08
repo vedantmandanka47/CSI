@@ -19,6 +19,7 @@ describe('PassportExportService', () => {
       findUnique: jest.fn(),
       findFirst: jest.fn(),
     },
+    $transaction: jest.fn(),
   };
 
   const mockAggregationService = {
@@ -34,6 +35,7 @@ describe('PassportExportService', () => {
     hasPassportPdf: jest.fn(),
     getPassportPdf: jest.fn(),
     verifyFileIntegrity: jest.fn(),
+    deletePassportPdf: jest.fn(),
   };
 
   const mockVerificationCodeService = {
@@ -88,9 +90,12 @@ describe('PassportExportService', () => {
       fileHash: 'sha256hash123',
       fileSizeBytes: 100,
     });
+    mockStorageService.deletePassportPdf.mockResolvedValue(true);
     mockStorageService.hasPassportPdf.mockReturnValue(true);
     mockStorageService.getPassportPdf.mockResolvedValue(Buffer.from('%PDF-dummy-bytes'));
     mockStorageService.verifyFileIntegrity.mockResolvedValue(true);
+
+    mockPrisma.$transaction.mockImplementation((fn: (tx: unknown) => unknown) => fn(mockPrisma));
 
     mockVerificationCodeService.generateVerificationCode.mockReturnValue('47XQ9M2KW8TR5VNP');
     mockVerificationCodeService.formatVerificationCode.mockReturnValue('47XQ-9M2K-W8TR-5VNP');
@@ -130,6 +135,21 @@ describe('PassportExportService', () => {
 
       expect(res.pdfBuffer).toBeDefined();
       expect(mockPrisma.passport.create).toHaveBeenCalled();
+    });
+
+    it('cleans up persisted storage file and rethrows when database transaction fails (HR-010 / F39)', async () => {
+      mockStorageService.savePassportPdf.mockResolvedValue({
+        storagePath: 'failing-passport.pdf',
+        fileHash: 'sha256hash123',
+        fileSizeBytes: 100,
+      });
+      mockPrisma.$transaction.mockRejectedValue(new Error('DB transaction deadlocked'));
+
+      await expect(
+        service.exportPassport('student-id-1', mockStudentUser),
+      ).rejects.toThrow('DB transaction deadlocked');
+
+      expect(mockStorageService.deletePassportPdf).toHaveBeenCalledWith('failing-passport.pdf');
     });
 
     it('denies intruder student from exporting another student passport (IDOR)', async () => {

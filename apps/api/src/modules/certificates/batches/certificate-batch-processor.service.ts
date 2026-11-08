@@ -106,6 +106,7 @@ export class CertificateBatchProcessorService {
         }
 
         for (const cert of pendingCertificates) {
+          let savedFile: { storagePath: string; fileHash: string; fileSizeBytes: number } | null = null;
           try {
             // Mark certificate processing
             await this.prisma.certificate.update({
@@ -151,7 +152,7 @@ export class CertificateBatchProcessorService {
             );
 
             // Persist to safe disk storage
-            const savedFile = await this.storageService.saveCertificatePdf(
+            savedFile = await this.storageService.saveCertificatePdf(
               cert.id,
               rendered.pdfBuffer,
               batchId,
@@ -171,6 +172,11 @@ export class CertificateBatchProcessorService {
               },
             });
           } catch (err: unknown) {
+            // Compensating storage cleanup if DB update or subsequent step fails after saving PDF (HR-010 / F39)
+            if (savedFile) {
+              await this.storageService.deleteCertificatePdf(savedFile.storagePath).catch(() => {});
+            }
+
             const errorMsg = err instanceof Error ? err.message : String(err);
             this.logger.warn(
               `Failed generating certificate '${cert.id}' for '${cert.recipientEmail}': ${errorMsg}`,
@@ -183,7 +189,7 @@ export class CertificateBatchProcessorService {
                 errorReason: errorMsg,
                 retryCount: { increment: 1 },
               },
-            });
+            }).catch(() => {});
           }
         }
       }

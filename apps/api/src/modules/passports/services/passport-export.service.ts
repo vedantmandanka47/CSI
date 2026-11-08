@@ -5,7 +5,7 @@ import {
   ForbiddenException,
   ConflictException,
 } from '@nestjs/common';
-import { randomBytes } from 'crypto';
+import { randomBytes, randomUUID } from 'crypto';
 import { PrismaService } from '../../../infra/prisma/prisma.service.js';
 import { PassportAggregationService } from './passport-aggregation.service.js';
 import { PassportPdfService } from './passport-pdf.service.js';
@@ -71,68 +71,81 @@ export class PassportExportService {
       verificationUrl,
     );
 
-    // 4. Mark earlier active passports for this student as 'superseded' to preserve historical snapshot
-    await this.prisma.passport.updateMany({
-      where: {
-        userId: passportData.student.id,
-        status: 'active',
-      },
-      data: {
-        status: 'superseded',
-      },
-    });
+    // 4. Pre-generate UUID and persist PDF to safe storage with compensating rollback on DB failure (HR-010 / F39)
+    const passportId = randomUUID();
+    let savedStoragePath: string | null = null;
 
-    // 5. Create Passport Record in Database with full activity snapshot
-    const passportRecord = await this.prisma.passport.create({
-      data: {
-        userId: passportData.student.id,
+    try {
+      const savedFile = await this.storageService.savePassportPdf(
+        passportId,
+        rendered.pdfBuffer,
+      );
+      savedStoragePath = savedFile.storagePath;
+
+      // 5. Transactionally supersede prior active passports and persist new passport snapshot
+      const passportRecord = await this.prisma.$transaction(async (tx) => {
+        // Mark earlier active passports for this student as 'superseded' to preserve historical snapshot
+        await tx.passport.updateMany({
+          where: {
+            userId: passportData.student.id,
+            status: 'active',
+          },
+          data: {
+            status: 'superseded',
+          },
+        });
+
+        // Create Passport Record in Database with full activity snapshot and verified storage path
+        return tx.passport.create({
+          data: {
+            id: passportId,
+            userId: passportData.student.id,
+            passportNumber,
+            status: 'active',
+            storagePath: savedFile.storagePath,
+            fileHash: rendered.fileHash,
+            fileSizeBytes: rendered.pdfBuffer.length,
+            verificationCodeHash,
+            summaryJson: {
+              counts: passportData.summary,
+              activities: passportData.activities.map((a) => ({
+                id: a.id,
+                type: a.type,
+                title: a.title,
+                category: a.category,
+                date: a.date,
+                verificationStatus: a.verificationStatus,
+              })),
+              snapshotAt: new Date().toISOString(),
+              version: 1,
+            },
+            generatedAt: new Date(),
+          },
+        });
+      });
+
+      this.logger.log(
+        `Generated Activity Passport '${passportRecord.id}' (${passportNumber}) for student '${passportData.student.name}'`,
+      );
+
+      const safeName = passportData.student.name.replace(/[^a-zA-Z0-9_-]/g, '_');
+      return {
+        passportId: passportRecord.id,
         passportNumber,
-        status: 'active',
-        fileHash: rendered.fileHash,
-        fileSizeBytes: rendered.pdfBuffer.length,
-        verificationCodeHash,
-        summaryJson: {
-          counts: passportData.summary,
-          activities: passportData.activities.map((a) => ({
-            id: a.id,
-            type: a.type,
-            title: a.title,
-            category: a.category,
-            date: a.date,
-            verificationStatus: a.verificationStatus,
-          })),
-          snapshotAt: new Date().toISOString(),
-          version: 1,
-        },
-        generatedAt: new Date(),
-      },
-    });
-
-    // 5. Persist PDF to safe disk storage
-    const savedFile = await this.storageService.savePassportPdf(
-      passportRecord.id,
-      rendered.pdfBuffer,
-    );
-
-    // Update with relative storage path
-    await this.prisma.passport.update({
-      where: { id: passportRecord.id },
-      data: {
-        storagePath: savedFile.storagePath,
-      },
-    });
-
-    this.logger.log(
-      `Generated Activity Passport '${passportRecord.id}' (${passportNumber}) for student '${passportData.student.name}'`,
-    );
-
-    const safeName = passportData.student.name.replace(/[^a-zA-Z0-9_-]/g, '_');
-    return {
-      passportId: passportRecord.id,
-      passportNumber,
-      pdfBuffer: rendered.pdfBuffer,
-      filename: `passport-${safeName}.pdf`,
-    };
+        pdfBuffer: rendered.pdfBuffer,
+        filename: `passport-${safeName}.pdf`,
+      };
+    } catch (err) {
+      // Reconcile storage write with database failure: delete newly created file if DB transaction fails (HR-010 / F39)
+      if (savedStoragePath) {
+        try {
+          await this.storageService.deletePassportPdf(savedStoragePath);
+        } catch (cleanupErr) {
+          this.logger.warn(`Failed to clean up orphaned passport PDF at '${savedStoragePath}': ${cleanupErr}`);
+        }
+      }
+      throw err;
+    }
   }
 
   /**

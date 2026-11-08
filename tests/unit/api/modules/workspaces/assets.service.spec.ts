@@ -23,6 +23,7 @@ type MockPrisma = {
   auditLog: {
     create: jest.Mock;
   };
+  $transaction: jest.Mock;
 };
 
 type MockStorage = {
@@ -66,6 +67,7 @@ describe('AssetsService (Unit)', () => {
       auditLog: {
         create: jest.fn().mockResolvedValue({ id: 'audit-asset-1' }),
       },
+      $transaction: jest.fn().mockImplementation((fn: (tx: unknown) => unknown) => fn(mockPrisma)),
     };
 
     mockWorkspacesService = {
@@ -82,7 +84,7 @@ describe('AssetsService (Unit)', () => {
       saveAssetFile: jest.fn(),
       getAssetFile: jest.fn(),
       hasAssetFile: jest.fn(),
-      deleteAssetFile: jest.fn(),
+      deleteAssetFile: jest.fn().mockResolvedValue(undefined),
     };
 
     service = new AssetsService(
@@ -207,6 +209,43 @@ describe('AssetsService (Unit)', () => {
       ).rejects.toThrow('Database write constraint violation');
 
       expect(mockStorage.deleteAssetFile).toHaveBeenCalledWith(`${mockCommittee.id}/asset-err_poster.png`);
+    });
+
+    it('should rollback transaction and clean up storage file if audit log creation fails (HR-010 / TASK-028)', async () => {
+      mockStorage.saveAssetFile.mockResolvedValue({
+        storagePath: `${mockCommittee.id}/asset-audit-err_poster.png`,
+        fileHash: 'sha-dummy',
+        fileSizeBytes: 100,
+        mimeType: 'image/png',
+      });
+      mockPrisma.committeeAsset.create.mockResolvedValue({
+        id: 'asset-audit-err',
+        committeeId: mockCommittee.id,
+        committee: mockCommittee,
+        eventId: null,
+        event: null,
+        taskId: null,
+        title: 'Audit Err Poster',
+        category: AssetCategory.POSTER,
+        fileName: 'poster.png',
+        storagePath: `${mockCommittee.id}/asset-audit-err_poster.png`,
+        fileSizeBytes: 100,
+        mimeType: 'image/png',
+        fileHash: 'sha-dummy',
+        status: AssetStatus.DRAFT,
+      });
+      mockPrisma.auditLog.create.mockRejectedValue(new Error('Audit log table unavailable'));
+
+      await expect(
+        service.uploadAsset('user-designer', [RoleCode.COMMITTEE], 'graphics', {
+          title: 'Audit Err Poster',
+          category: AssetCategory.POSTER,
+          fileName: 'poster.png',
+          fileBase64: 'data:image/png;base64,ZmFrZS1wbmctY29udGVudA==',
+        }),
+      ).rejects.toThrow('Audit log table unavailable');
+
+      expect(mockStorage.deleteAssetFile).toHaveBeenCalledWith(`${mockCommittee.id}/asset-audit-err_poster.png`);
     });
   });
 
@@ -348,6 +387,55 @@ describe('AssetsService (Unit)', () => {
           }),
         }),
       );
+    });
+  });
+
+  describe('deleteAsset', () => {
+    it('should delete asset and audit log within transaction and clean up storage file', async () => {
+      mockPrisma.committeeAsset.findFirst.mockResolvedValue({
+        id: 'asset-del-1',
+        committeeId: mockCommittee.id,
+        uploadedById: 'user-designer',
+        fileName: 'del-poster.png',
+        storagePath: `${mockCommittee.id}/del-poster.png`,
+      });
+      mockPrisma.committeeAsset.delete.mockResolvedValue({ id: 'asset-del-1' });
+
+      const res = await service.deleteAsset(
+        'user-designer',
+        [RoleCode.COMMITTEE],
+        'graphics',
+        'asset-del-1',
+      );
+
+      expect(res.success).toBe(true);
+      expect(res.assetId).toBe('asset-del-1');
+      expect(mockPrisma.$transaction).toHaveBeenCalled();
+      expect(mockPrisma.committeeAsset.delete).toHaveBeenCalledWith({
+        where: { id: 'asset-del-1' },
+      });
+      expect(mockStorage.deleteAssetFile).toHaveBeenCalledWith(`${mockCommittee.id}/del-poster.png`);
+    });
+
+    it('should reject non-lead non-uploader member from deleting asset', async () => {
+      mockPrisma.committeeAsset.findFirst.mockResolvedValue({
+        id: 'asset-del-2',
+        committeeId: mockCommittee.id,
+        uploadedById: 'user-other',
+        fileName: 'other.png',
+        storagePath: `${mockCommittee.id}/other.png`,
+      });
+
+      await expect(
+        service.deleteAsset(
+          'user-designer',
+          [RoleCode.COMMITTEE],
+          'graphics',
+          'asset-del-2',
+        ),
+      ).rejects.toThrow(ForbiddenException);
+
+      expect(mockStorage.deleteAssetFile).not.toHaveBeenCalled();
     });
   });
 });

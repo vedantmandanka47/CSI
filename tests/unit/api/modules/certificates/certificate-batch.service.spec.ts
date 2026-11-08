@@ -353,6 +353,58 @@ describe('Certificate Batch Subsystem (M12 Unit Tests)', () => {
         }),
       );
     });
+
+    it('should clean up storage PDF if database update fails after saving certificate file (HR-010 / F39)', async () => {
+      mockPrisma.certificateBatch.updateMany.mockResolvedValue({ count: 1 });
+      mockPrisma.certificateBatch.findUnique.mockResolvedValue({
+        id: 'batch-cleanup',
+        templateConfig: CertificateTemplateEngineService.DEFAULT_CSI_PARTICIPATION_TEMPLATE,
+        event: { title: 'AI Workshop', category: 'Technical' },
+      });
+
+      mockPrisma.certificate.findMany
+        .mockResolvedValueOnce([
+          {
+            id: 'cert-db-crash',
+            recipientName: 'Aryan Shah',
+            recipientEmail: 'aryan@gcet.ac.in',
+            issueDate: 'March 2026',
+            certificateNumber: 'CSI-2026-AI-0001',
+            status: CertificateStatus.PENDING,
+            retryCount: 0,
+          },
+        ])
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([{ status: CertificateStatus.FAILED }]);
+
+      mockTemplateEngine.renderCertificate.mockResolvedValue({
+        pdfBuffer: Buffer.from('%PDF-1.4 test certificate'),
+        fileHash: 'sha256hash123',
+      });
+
+      const deleteSpy = jest.spyOn(storage, 'deleteCertificatePdf');
+
+      // First update marks PROCESSING, second update (to GENERATED) fails!
+      mockPrisma.certificate.update
+        .mockResolvedValueOnce({}) // marks PROCESSING
+        .mockRejectedValueOnce(new Error('Prisma write timeout')) // fails marking GENERATED
+        .mockResolvedValueOnce({}); // marks FAILED
+
+      mockPrisma.certificateBatch.update.mockResolvedValue({});
+
+      await batchProcessor.processBatch('batch-cleanup');
+
+      expect(deleteSpy).toHaveBeenCalledWith('batch-cleanup/cert-db-crash.pdf');
+      expect(mockPrisma.certificate.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'cert-db-crash' },
+          data: expect.objectContaining({
+            status: CertificateStatus.FAILED,
+            errorReason: 'Prisma write timeout',
+          }),
+        }),
+      );
+    });
   });
 
   describe('5. CertificateIssuanceService', () => {

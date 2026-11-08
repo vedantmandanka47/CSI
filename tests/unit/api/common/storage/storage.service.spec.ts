@@ -1,5 +1,5 @@
 import { promises as fsPromises } from 'fs';
-import { join } from 'path';
+import { join, basename } from 'path';
 import { Readable } from 'stream';
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { LocalStorageProvider } from '../../../../../apps/api/src/common/storage/local-storage.provider.js';
@@ -10,7 +10,11 @@ import { PassportStorageService } from '../../../../../apps/api/src/modules/pass
 import { WorkspaceAssetStorageService } from '../../../../../apps/api/src/modules/workspaces/workspace-asset-storage.service.js';
 
 describe('Storage System (TASK-027 / B16 / HR-002)', () => {
-  const testRoot = join(process.cwd(), 'apps/api/storage/test_storage_tmp');
+  const cwd = process.cwd();
+  const testRoot =
+    cwd.endsWith('apps/api') || cwd.endsWith('apps\\api') || basename(cwd) === 'api'
+      ? join(cwd, 'storage/test_storage_tmp')
+      : join(cwd, 'apps/api/storage/test_storage_tmp');
 
   beforeAll(async () => {
     await fsPromises.mkdir(testRoot, { recursive: true });

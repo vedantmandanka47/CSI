@@ -132,45 +132,49 @@ export class AssetsService {
     );
 
     try {
-      const asset = await this.prisma.committeeAsset.create({
-        data: {
-          id: assetId,
-          committeeId: committee.id,
-          eventId: input.eventId ?? null,
-          taskId: input.taskId ?? null,
-          title: input.title,
-          category: input.category,
-          fileName: input.fileName,
-          storagePath: saved.storagePath,
-          fileSizeBytes: saved.fileSizeBytes,
-          mimeType: saved.mimeType,
-          fileHash: saved.fileHash,
-          status: AssetStatus.DRAFT,
-          uploadedById: userId,
-        },
-        include: {
-          committee: true,
-          event: true,
-          uploadedBy: { select: { id: true, name: true, email: true } },
-        },
-      });
-
-      await this.prisma.auditLog.create({
-        data: {
-          action: 'asset.uploaded',
-          targetType: 'asset',
-          targetId: asset.id,
-          actorId: userId,
-          ip: ip ?? '127.0.0.1',
-          afterJson: {
-            assetId: asset.id,
-            committeeCode: committee.code,
-            fileName: asset.fileName,
-            category: asset.category,
-            fileSizeBytes: asset.fileSizeBytes,
-            fileHash: asset.fileHash,
+      const asset = await this.prisma.$transaction(async (tx) => {
+        const created = await tx.committeeAsset.create({
+          data: {
+            id: assetId,
+            committeeId: committee.id,
+            eventId: input.eventId ?? null,
+            taskId: input.taskId ?? null,
+            title: input.title,
+            category: input.category,
+            fileName: input.fileName,
+            storagePath: saved.storagePath,
+            fileSizeBytes: saved.fileSizeBytes,
+            mimeType: saved.mimeType,
+            fileHash: saved.fileHash,
+            status: AssetStatus.DRAFT,
+            uploadedById: userId,
           },
-        },
+          include: {
+            committee: true,
+            event: true,
+            uploadedBy: { select: { id: true, name: true, email: true } },
+          },
+        });
+
+        await tx.auditLog.create({
+          data: {
+            action: 'asset.uploaded',
+            targetType: 'asset',
+            targetId: created.id,
+            actorId: userId,
+            ip: ip ?? '127.0.0.1',
+            afterJson: {
+              assetId: created.id,
+              committeeCode: committee.code,
+              fileName: created.fileName,
+              category: created.category,
+              fileSizeBytes: created.fileSizeBytes,
+              fileHash: created.fileHash,
+            },
+          },
+        });
+
+        return created;
       });
 
       return {
@@ -202,7 +206,11 @@ export class AssetsService {
       };
     } catch (err) {
       // Reconcile filesystem write with database failure: remove orphaned file if database or audit log fails (HR-010)
-      await this.storageService.deleteAssetFile(saved.storagePath);
+      try {
+        await this.storageService.deleteAssetFile(saved.storagePath);
+      } catch {
+        // Ignore secondary storage deletion failure during error handling
+      }
       throw err;
     }
   }
@@ -545,26 +553,33 @@ export class AssetsService {
       });
     }
 
-    await this.storageService.deleteAssetFile(asset.storagePath);
+    await this.prisma.$transaction(async (tx) => {
+      await tx.committeeAsset.delete({
+        where: { id: assetId },
+      });
 
-    await this.prisma.committeeAsset.delete({
-      where: { id: assetId },
-    });
-
-    await this.prisma.auditLog.create({
-      data: {
-        action: 'asset.deleted',
-        targetType: 'asset',
-        targetId: assetId,
-        actorId: userId,
-        ip: ip ?? '127.0.0.1',
-        beforeJson: {
-          assetId,
-          committeeCode: committee.code,
-          fileName: asset.fileName,
+      await tx.auditLog.create({
+        data: {
+          action: 'asset.deleted',
+          targetType: 'asset',
+          targetId: assetId,
+          actorId: userId,
+          ip: ip ?? '127.0.0.1',
+          beforeJson: {
+            assetId,
+            committeeCode: committee.code,
+            fileName: asset.fileName,
+          },
         },
-      },
+      });
     });
+
+    // Compensating filesystem cleanup after database transaction commits
+    try {
+      await this.storageService.deleteAssetFile(asset.storagePath);
+    } catch {
+      // Ignore secondary storage deletion failure; reconciliation script will detect unreferenced file
+    }
 
     return { success: true, assetId };
   }

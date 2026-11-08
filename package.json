@@ -40,6 +40,8 @@
     "backup": "tsx scripts/database/backup.ts",
     "restore:drill": "tsx scripts/database/restore-drill.ts",
     "maintenance:retention-purge": "tsx scripts/maintenance/run-retention-purge.ts",
+    "storage:reconcile": "tsx scripts/maintenance/reconcile-storage.ts",
+    "maintenance:storage-reconcile": "tsx scripts/maintenance/reconcile-storage.ts",
     "audit:deps": "node scripts/validation/audit-deps.mjs"
   },
   "devDependencies": {

@@ -27,14 +27,14 @@ This document is the unified, authoritative remediation master plan for the CSI 
 | **Phase 1** | Build Pipeline, Toolchain & Runtime Initialization | 5 | 5 | 0 | 0 |
 | **Phase 2** | Core Domain Logic, Event Capacities & Role Boundaries | 8 | 8 | 0 | 0 |
 | **Phase 3** | Attendance, Offline Sync & Scanner System | 7 | 7 | 0 | 0 |
-| **Phase 4** | Document Engine, Batch Processing & File Storage Durability | 9 | 1 | 0 | 8 |
+| **Phase 4** | Document Engine, Batch Processing & File Storage Durability | 9 | 2 | 0 | 7 |
 | **Phase 5** | Annual Rollover, Checklists, Workspaces & Transactions | 5 | 0 | 0 | 5 |
 | **Phase 6** | Privacy, Data Protection, DPDP & Retention System | 4 | 1 | 0 | 3 |
 | **Phase 7** | Network Security, HTTP Headers, CSRF & Rate Limiting | 6 | 0 | 0 | 6 |
 | **Phase 8** | Database, Disaster Recovery, Backup & Archive Safety | 7 | 4 | 1 | 2 |
 | **Phase 9** | API Validation, Error Handling, Client Resilience & E2E | 4 | 0 | 0 | 4 |
 | **Phase 10** | Production Operations, Deployment Recipes & Documentation | 5 | 0 | 0 | 5 |
-| **TOTAL** | **Comprehensive Full-Platform Remediation** | **66** | **32** | **0** | **34** |
+| **TOTAL** | **Comprehensive Full-Platform Remediation** | **66** | **33** | **0** | **33** |
 
 ---
 
@@ -630,17 +630,27 @@ This document is the unified, authoritative remediation master plan for the CSI 
     3. Add `S3StorageProvider` skeleton supporting S3-compatible backends (AWS S3, Cloudflare R2, MinIO).
     4. Convert synchronous filesystem calls in certificate, passport, and asset services to async storage calls.
 
-- [ ] **TASK-028 [HIGH] [HR-010 / F39]: Transactional Reconciliation for Filesystem Writes & Orphaned File Cleanup**
+- [x] **TASK-028 [HIGH] [HR-010 / F39]: Transactional Reconciliation for Filesystem Writes & Orphaned File Cleanup**
   - **Severity:** High (Orphaned Sensitive Files / Storage Leaks)
+  - **Completed:**
+    - Wrapped workspace asset creation and audit log generation in `AssetsService.uploadAsset` within an interactive transaction (`prisma.$transaction`), accompanied by compensating cleanup (`deleteAssetFile`) in the catch block to guarantee atomic DB rollback and zero orphaned storage files.
+    - Wrapped workspace asset deletion and audit log generation in `AssetsService.deleteAsset` inside `prisma.$transaction`, ensuring transactional integrity before purging the underlying asset file.
+    - Pre-generated passport UUID upfront in `PassportExportService.exportPassport`, persisting the file to storage and atomically wrapping active passport supersession and new passport creation within `prisma.$transaction`, with compensating cleanup (`deletePassportPdf`) removing unreferenced files on database failures.
+    - Added compensating cleanup in `CertificateBatchProcessorService.processBatch` (`deleteCertificatePdf`) when database updates fail mid-batch after saving the certificate PDF.
+    - Implemented standalone storage reconciliation maintenance engine in `scripts/maintenance/reconcile-storage.ts` supporting `--dry-run`, `--quarantine`, and `--prune` modes across `workspaces/assets`, `certificates`, and `passports` namespaces, and added `npm run storage:reconcile` script to `package.json`.
+    - Added comprehensive unit tests in `tests/unit/api/maintenance/reconcile-storage.spec.ts` (5/5 passed), updated `tests/unit/api/modules/workspaces/assets.service.spec.ts` (12/12 passed), `tests/unit/api/modules/passports/passport-export.service.spec.ts` (9/9 passed), and `tests/unit/api/modules/certificates/certificate-batch.service.spec.ts` (18/18 passed). Monorepo test suite (690/690) and live DB E2E tests (190/190) all 100% passing.
   - **Affected Files:**
     - `apps/api/src/modules/workspaces/assets.service.ts`
-    - `apps/api/src/modules/certificates/issuance/certificate-issuance.service.ts`
     - `apps/api/src/modules/passports/services/passport-export.service.ts`
-  - **Problem:** Assets and certificates write files to disk before the database insert/audit log completes. If database writes fail, orphaned files remain on disk indefinitely without database references or cleanup.
-  - **Remediation Plan:**
-    1. Stage files in temporary location; rename/promote to final path only after the database transaction commits.
-    2. Add compensating cleanup (`unlink`) in `catch` blocks if database writes fail.
-    3. Add a maintenance reconciliation script to detect and quarantine unreferenced storage files.
+    - `apps/api/src/modules/certificates/batches/certificate-batch-processor.service.ts`
+    - `package.json`
+    - `scripts/maintenance/reconcile-storage.ts` (new)
+    - `tests/unit/api/maintenance/reconcile-storage.spec.ts` (new)
+    - `tests/unit/api/modules/workspaces/assets.service.spec.ts`
+    - `tests/unit/api/modules/passports/passport-export.service.spec.ts`
+    - `tests/unit/api/modules/certificates/certificate-batch.service.spec.ts`
+    - `tests/unit/api/common/storage/storage.service.spec.ts`
+    - `tests/e2e/certificate-verification.e2e-spec.ts`
 
 - [ ] **TASK-029 [HIGH] [F22]: Durable Distributed Worker Ownership & Leases for Certificate Batch Processor**
   - **Severity:** High (Race Conditions / Overwritten Certificates)
