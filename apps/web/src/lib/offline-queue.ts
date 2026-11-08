@@ -2,6 +2,7 @@ import {
   AttendanceSyncOperationInput,
   BatchSyncAttendanceResponse,
   AttendanceStatus,
+  AttendanceMethod,
 } from '@csi/shared';
 import { apiClient } from './api-client';
 
@@ -45,11 +46,57 @@ function openDb(): Promise<IDBDatabase> {
 }
 
 /**
+ * Decodes the payload of a dynamic QR pass without verifying the cryptographic signature.
+ * Used for client-side pre-flight expiration validation prior to enqueueing (TASK-023 / B18 / F08).
+ */
+export function decodeQrPassPayload(
+  token: string,
+): { sub: string; exp: number; iat: number } | null {
+  try {
+    const parts = token.split('.');
+    if (parts.length !== 3 || parts[0] !== 'csi_pass' || !parts[1]) {
+      return null;
+    }
+    const base64Url = parts[1];
+    let jsonStr: string;
+    if (typeof Buffer !== 'undefined') {
+      jsonStr = Buffer.from(base64Url, 'base64url').toString('utf8');
+    } else {
+      const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+      const padded = base64.padEnd(base64.length + ((4 - (base64.length % 4)) % 4), '=');
+      jsonStr = decodeURIComponent(
+        Array.prototype.map
+          .call(atob(padded), (c: string) => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
+          .join(''),
+      );
+    }
+    const parsed = JSON.parse(jsonStr) as Record<string, unknown>;
+    if (parsed && typeof parsed === 'object' && typeof parsed['exp'] === 'number') {
+      return parsed as unknown as { sub: string; exp: number; iat: number };
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Enqueue an attendance operation in IndexedDB.
  */
 export async function enqueueOfflineOperation(
   data: Omit<AttendanceSyncOperationInput, 'client_uuid' | 'client_marked_at'>,
 ): Promise<QueuedAttendanceOperation> {
+  // Pre-flight check: If QR scan, reject if the pass was already expired at capture time
+  if (data.method === AttendanceMethod.QR_SCAN && data.payload) {
+    const parsed = decodeQrPassPayload(data.payload);
+    if (parsed) {
+      const nowSec = Math.floor(Date.now() / 1000);
+      if (nowSec > parsed.exp + 30) {
+        throw new Error('QR pass is already expired. Please ask the attendee to refresh their digital card.');
+      }
+    }
+  }
+
   const db = await openDb();
   const clientUuid = crypto.randomUUID();
   const nowIso = new Date().toISOString();

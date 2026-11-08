@@ -51,7 +51,9 @@ export class IdCardController {
       });
     }
 
-    const data = await this.idCardService.verifyQrPass(parseResult.data.token);
+    const data = await this.idCardService.verifyQrPass(parseResult.data.token, {
+      captureTimestamp: parseResult.data.capture_timestamp,
+    });
     return { data };
   }
 }

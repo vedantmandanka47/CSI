@@ -205,5 +205,154 @@ describe('IdCardService (M8, AUD-SEC-03)', () => {
       expect(result.valid).toBe(true);
       expect(result.user_id).toBe('member-hmac');
     });
+
+    describe('Trusted Device Capture & Offline Sync Lifecycle (TASK-023 / B18 / F08)', () => {
+      const activeUser = {
+        id: 'member-offline-1',
+        name: 'Offline Attendee',
+        enrollmentNo: '23CS555',
+        status: UserStatus.ACTIVE,
+      };
+
+      it('validates pass scanned offline within validity window during later sync reconciliation', async () => {
+        mockPrisma.user.findUnique.mockResolvedValue(activeUser);
+
+        // Issued at 2 hours ago, valid for 60 seconds
+        const nowSec = Math.floor(Date.now() / 1000);
+        const issuedSec = nowSec - 7200; // 2 hours ago
+        const expSec = issuedSec + 60; // expired 1 hour 59 mins ago
+        const captureSec = issuedSec + 15; // captured 15 seconds after issuance (legitimate scan)
+
+        const payload: QrPassPayload = {
+          sub: 'member-offline-1',
+          eno: '23CS555',
+          nam: 'Offline Attendee',
+          rol: ['member'],
+          iat: issuedSec,
+          exp: expSec,
+          jti: 'offline-jti-1',
+        };
+
+        const token = service.signQrPayload(payload);
+
+        // Without captureTimestamp, standard online check fails because token is 2 hours old
+        const onlineResult = await service.verifyQrPass(token);
+        expect(onlineResult.valid).toBe(false);
+        expect(onlineResult.message).toContain('QR pass expired');
+
+        // With trusted captureTimestamp from volunteer workstation, verification succeeds
+        const offlineResult = await service.verifyQrPass(token, {
+          captureTimestamp: captureSec * 1000,
+          maxSyncWindowSec: 86400,
+        });
+
+        expect(offlineResult.valid).toBe(true);
+        expect(offlineResult.user_id).toBe('member-offline-1');
+        expect(offlineResult.name).toBe('Offline Attendee');
+      });
+
+      it('rejects pass that was already expired at optical capture time', async () => {
+        const nowSec = Math.floor(Date.now() / 1000);
+        const issuedSec = nowSec - 7200; // 2 hours ago
+        const expSec = issuedSec + 60;
+        const captureSec = issuedSec + 120; // scanned 1 minute AFTER expiry
+
+        const payload: QrPassPayload = {
+          sub: 'member-offline-1',
+          eno: '23CS555',
+          nam: 'Offline Attendee',
+          rol: ['member'],
+          iat: issuedSec,
+          exp: expSec,
+          jti: 'offline-jti-2',
+        };
+
+        const token = service.signQrPayload(payload);
+
+        const result = await service.verifyQrPass(token, {
+          captureTimestamp: captureSec * 1000,
+        });
+
+        expect(result.valid).toBe(false);
+        expect(result.message).toBe('QR pass was expired at capture time.');
+      });
+
+      it('rejects pass with optical capture timestamp predating token issuance', async () => {
+        const nowSec = Math.floor(Date.now() / 1000);
+        const issuedSec = nowSec - 3600;
+        const expSec = issuedSec + 60;
+        const captureSec = issuedSec - 100; // 100 seconds before token was created
+
+        const payload: QrPassPayload = {
+          sub: 'member-offline-1',
+          eno: '23CS555',
+          nam: 'Offline Attendee',
+          rol: ['member'],
+          iat: issuedSec,
+          exp: expSec,
+          jti: 'offline-jti-3',
+        };
+
+        const token = service.signQrPayload(payload);
+
+        const result = await service.verifyQrPass(token, {
+          captureTimestamp: captureSec * 1000,
+        });
+
+        expect(result.valid).toBe(false);
+        expect(result.message).toBe('QR pass capture timestamp predates token issuance.');
+      });
+
+      it('rejects pass with optical capture timestamp in the future', async () => {
+        const nowSec = Math.floor(Date.now() / 1000);
+        const futureCaptureSec = nowSec + 600; // 10 minutes in the future
+
+        const payload: QrPassPayload = {
+          sub: 'member-offline-1',
+          eno: '23CS555',
+          nam: 'Offline Attendee',
+          rol: ['member'],
+          iat: nowSec,
+          exp: nowSec + 60,
+          jti: 'offline-jti-4',
+        };
+
+        const token = service.signQrPayload(payload);
+
+        const result = await service.verifyQrPass(token, {
+          captureTimestamp: futureCaptureSec * 1000,
+        });
+
+        expect(result.valid).toBe(false);
+        expect(result.message).toBe('Capture timestamp cannot be in the future.');
+      });
+
+      it('rejects pass exceeding maximum offline sync retention window (24 hours)', async () => {
+        const nowSec = Math.floor(Date.now() / 1000);
+        const staleSec = nowSec - 100000; // > 27 hours ago
+
+        const payload: QrPassPayload = {
+          sub: 'member-offline-1',
+          eno: '23CS555',
+          nam: 'Offline Attendee',
+          rol: ['member'],
+          iat: staleSec,
+          exp: staleSec + 60,
+          jti: 'offline-jti-5',
+        };
+
+        const token = service.signQrPayload(payload);
+
+        const result = await service.verifyQrPass(token, {
+          captureTimestamp: (staleSec + 20) * 1000,
+          maxSyncWindowSec: 86400,
+        });
+
+        expect(result.valid).toBe(false);
+        expect(result.message).toBe(
+          'Captured QR pass exceeds maximum offline sync retention window (24 hours).',
+        );
+      });
+    });
   });
 });

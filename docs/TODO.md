@@ -506,12 +506,27 @@ This document is the unified, authoritative remediation master plan for the CSI 
     2. Mandate audit reason strings for any manual override.
     3. Add rate limits and individual audit log entries for offline batch imports.
 
-- [ ] **TASK-023 [HIGH] [B18 / F08]: Offline QR Capture Token Lifecycle & Trusted Time Synchronization**
+- [x] **TASK-023 [HIGH] [B18 / F08]: Offline QR Capture Token Lifecycle & Trusted Time Synchronization**
   - **Severity:** High (Offline Protocol Flaw)
+  - **Completed:**
+    - Designed and implemented trusted device capture time verification in `IdCardService.verifyQrPass` supporting `VerifyQrPassOptions` (`captureTimestamp`, `maxSyncWindowSec`, `clockSkewToleranceSec`).
+    - Enforced Ed25519 digital signature validation before inspecting payload time bounds, preventing tampering with token timestamps or claims.
+    - Added capture-time evaluation during offline reconciliation (`syncOfflineOperations`), verifying the pass was valid when optically captured (`iat - 30 <= captureSec <= exp + 30`) and rejecting expired captures with `QR pass was expired at capture time.`.
+    - Enforced maximum offline sync retention bounds (`nowSec - captureSec <= 24 * 3600`), rejecting stale offline operations older than 24 hours.
+    - Added future-timestamp rejection (`captureSec > nowSec + 30`) preventing device clock forward-spoofing.
+    - Added client-side preflight in `apps/web/src/lib/offline-queue.ts` (`decodeQrPassPayload`) throwing immediate actionable errors in UI if an attendee presents an already-expired QR pass offline.
+    - Authored comprehensive architectural specification in `docs/OFFLINE_ATTENDANCE.md`.
+    - Added unit test suites in `id-card.service.spec.ts` (14/14 passed), `attendance.service.spec.ts` (17/17 passed), and `offline-queue.spec.ts` (11/11 passed). Monorepo test suite passing (636/636 tests).
   - **Affected Files:**
     - `apps/api/src/modules/id-card/id-card.service.ts`
+    - `apps/api/src/modules/id-card/id-card.controller.ts`
     - `apps/api/src/modules/attendance/attendance.service.ts`
     - `apps/web/src/lib/offline-queue.ts`
+    - `packages/shared/src/schemas/id-card.schema.ts`
+    - `docs/OFFLINE_ATTENDANCE.md` (new)
+    - `tests/unit/api/modules/id-card/id-card.service.spec.ts`
+    - `tests/unit/api/modules/attendance/attendance.service.spec.ts`
+    - `tests/unit/web/offline-queue.spec.ts`
   - **Problem:** ID card QR tokens expire in 60 seconds. Offline sync passes the captured QR to `verifyQrPass`, which validates expiry against the server's current timestamp at sync time (which may be hours later). Valid offline check-ins fail on sync.
   - **Remediation Plan:**
     1. Design an offline ticket protocol using signed session attendance tokens with trusted device capture timestamps or require scanner connectivity for dynamic QR passes while allowing manual/student-ID offline check-in.

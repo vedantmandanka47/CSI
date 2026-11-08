@@ -604,7 +604,10 @@ export class AttendanceService {
         let targetMemberId = op.member_id;
 
         if (op.method === AttendanceMethod.QR_SCAN) {
-          const qrRes = await this.idCardService.verifyQrPass(op.payload);
+          const qrRes = await this.idCardService.verifyQrPass(op.payload, {
+            captureTimestamp: clientMarkedAt,
+            maxSyncWindowSec: 24 * 3600,
+          });
           if (!qrRes.valid || !qrRes.user_id) {
             results.push({
               client_uuid: op.client_uuid,

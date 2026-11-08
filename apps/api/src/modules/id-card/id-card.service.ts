@@ -35,6 +35,28 @@ export interface QrPassPayload {
   jti: string;
 }
 
+export interface VerifyQrPassOptions {
+  /**
+   * Trusted device capture timestamp when the QR pass was optically scanned.
+   * If provided (offline queue sync mode), the pass validity window is verified
+   * against this capture timestamp rather than current sync-time server clock,
+   * subject to the maximum offline sync retention window.
+   */
+  captureTimestamp?: Date | number | string;
+
+  /**
+   * Maximum allowed duration (in seconds) between device capture and cloud sync.
+   * Default: 24 hours (86,400 seconds).
+   */
+  maxSyncWindowSec?: number;
+
+  /**
+   * Permitted clock skew tolerance (in seconds) between attendee device and volunteer scanner device.
+   * Default: 30 seconds.
+   */
+  clockSkewToleranceSec?: number;
+}
+
 @Injectable()
 export class IdCardService {
   private readonly logger = new Logger(IdCardService.name);
@@ -178,8 +200,12 @@ export class IdCardService {
 
   /**
    * Server-side cryptographic verification of rotating QR pass tokens (Ed25519 asymmetric signature).
+   * Supports both online real-time verification and trusted offline capture verification (TASK-023 / B18 / F08).
    */
-  async verifyQrPass(token: string): Promise<VerifyQrPassResponse> {
+  async verifyQrPass(
+    token: string,
+    options?: VerifyQrPassOptions,
+  ): Promise<VerifyQrPassResponse> {
     const parts = token.split('.');
     if (parts.length !== 3 || parts[0] !== 'csi_pass') {
       return {
@@ -239,14 +265,77 @@ export class IdCardService {
       };
     }
 
-    // Expiration check
     const nowSec = Math.floor(Date.now() / 1000);
-    if (nowSec > payload.exp) {
-      return {
-        valid: false,
-        user_id: payload.sub,
-        message: 'QR pass expired. Please present refreshed digital card.',
-      };
+    const clockSkewSec = options?.clockSkewToleranceSec ?? 30;
+
+    // 3. Time validity verification (TASK-023 / B18 / F08)
+    if (options?.captureTimestamp !== undefined) {
+      // Offline queue capture mode: evaluate validity at the time the pass was optically scanned
+      let captureSec: number;
+      if (options.captureTimestamp instanceof Date) {
+        captureSec = Math.floor(options.captureTimestamp.getTime() / 1000);
+      } else if (typeof options.captureTimestamp === 'number') {
+        captureSec =
+          options.captureTimestamp > 1e11
+            ? Math.floor(options.captureTimestamp / 1000)
+            : Math.floor(options.captureTimestamp);
+      } else {
+        captureSec = Math.floor(new Date(options.captureTimestamp).getTime() / 1000);
+      }
+
+      if (Number.isNaN(captureSec)) {
+        return {
+          valid: false,
+          user_id: payload.sub,
+          message: 'Invalid capture timestamp provided for QR pass verification.',
+        };
+      }
+
+      // Check 3.1: Scanner device clock cannot claim scan occurred in the future
+      if (captureSec > nowSec + clockSkewSec) {
+        return {
+          valid: false,
+          user_id: payload.sub,
+          message: 'Capture timestamp cannot be in the future.',
+        };
+      }
+
+      // Check 3.2: Maximum offline sync retention window (24 hours)
+      const maxSyncWindowSec = options.maxSyncWindowSec ?? 24 * 3600;
+      if (nowSec - captureSec > maxSyncWindowSec) {
+        return {
+          valid: false,
+          user_id: payload.sub,
+          message: 'Captured QR pass exceeds maximum offline sync retention window (24 hours).',
+        };
+      }
+
+      // Check 3.3: Capture timestamp cannot predate token issuance
+      if (captureSec < payload.iat - clockSkewSec) {
+        return {
+          valid: false,
+          user_id: payload.sub,
+          message: 'QR pass capture timestamp predates token issuance.',
+        };
+      }
+
+      // Check 3.4: Token must have been active when scanned offline
+      if (captureSec > payload.exp + clockSkewSec) {
+        return {
+          valid: false,
+          user_id: payload.sub,
+          message: 'QR pass was expired at capture time.',
+        };
+      }
+    } else {
+      // Online evaluation mode: check against current server time
+      if (nowSec > payload.exp) {
+        return {
+          valid: false,
+          user_id: payload.sub,
+          message: 'QR pass expired. Please present refreshed digital card.',
+        };
+      }
     }
 
     // Database user check

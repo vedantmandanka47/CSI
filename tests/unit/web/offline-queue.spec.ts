@@ -5,6 +5,7 @@ import {
   syncPendingOperations,
   clearSyncedOperations,
   getQueueStats,
+  decodeQrPassPayload,
   QueuedAttendanceOperation,
 } from '@/lib/offline-queue';
 import { apiClient } from '@/lib/api-client';
@@ -331,5 +332,76 @@ describe('Offline Attendance Queue (IndexedDB) & Sync Reconciliation (TASK-021 /
     await expect(syncPendingOperations()).rejects.toThrow(
       'Invalid synchronization response structure from server.',
     );
+  });
+
+  describe('Offline QR Capture Token Preflight & Lifecycle (TASK-023 / B18 / F08)', () => {
+    it('decodes valid base64url QR pass payload structure', () => {
+      const nowSec = Math.floor(Date.now() / 1000);
+      const payloadObj = {
+        sub: 'member-test-uuid',
+        eno: '23CS101',
+        nam: 'Test Member',
+        rol: ['member'],
+        iat: nowSec,
+        exp: nowSec + 60,
+        jti: 'jti-123',
+      };
+      const base64Url = Buffer.from(JSON.stringify(payloadObj)).toString('base64url');
+      const token = `csi_pass.${base64Url}.mocksignature`;
+
+      const decoded = decodeQrPassPayload(token);
+      expect(decoded).not.toBeNull();
+      expect(decoded?.sub).toBe('member-test-uuid');
+      expect(decoded?.exp).toBe(nowSec + 60);
+      expect(decoded?.iat).toBe(nowSec);
+    });
+
+    it('returns null for malformed tokens or tokens not matching csi_pass structure', () => {
+      expect(decodeQrPassPayload('invalid-token')).toBeNull();
+      expect(decodeQrPassPayload('other_prefix.payload.sig')).toBeNull();
+      expect(decodeQrPassPayload('csi_pass.notjson.sig')).toBeNull();
+    });
+
+    it('throws immediate descriptive error when attempting to enqueue an already-expired QR pass offline', async () => {
+      const nowSec = Math.floor(Date.now() / 1000);
+      const expiredPayload = {
+        sub: 'member-expired',
+        iat: nowSec - 300,
+        exp: nowSec - 240, // Expired 4 minutes ago
+      };
+      const base64Url = Buffer.from(JSON.stringify(expiredPayload)).toString('base64url');
+      const expiredToken = `csi_pass.${base64Url}.mocksignature`;
+
+      await expect(
+        enqueueOfflineOperation({
+          session_id: '11111111-1111-1111-1111-111111111111',
+          method: AttendanceMethod.QR_SCAN,
+          payload: expiredToken,
+        }),
+      ).rejects.toThrow(
+        'QR pass is already expired. Please ask the attendee to refresh their digital card.',
+      );
+    });
+
+    it('successfully enqueues a valid non-expired QR pass offline', async () => {
+      const nowSec = Math.floor(Date.now() / 1000);
+      const validPayload = {
+        sub: 'member-fresh',
+        iat: nowSec,
+        exp: nowSec + 60,
+      };
+      const base64Url = Buffer.from(JSON.stringify(validPayload)).toString('base64url');
+      const freshToken = `csi_pass.${base64Url}.mocksignature`;
+
+      const item = await enqueueOfflineOperation({
+        session_id: '11111111-1111-1111-1111-111111111111',
+        method: AttendanceMethod.QR_SCAN,
+        payload: freshToken,
+      });
+
+      expect(item.client_uuid).toBeDefined();
+      expect(item.queue_status).toBe('pending');
+      expect(mockStore.has(item.client_uuid)).toBe(true);
+    });
   });
 });

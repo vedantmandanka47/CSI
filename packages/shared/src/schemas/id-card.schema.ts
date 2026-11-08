@@ -20,6 +20,7 @@ export type IdCardData = z.infer<typeof IdCardDataSchema>;
 
 export const VerifyQrPassSchema = z.object({
   token: z.string().min(10, 'QR token is required'),
+  capture_timestamp: z.string().datetime().optional(),
 });
 
 export type VerifyQrPassInput = z.infer<typeof VerifyQrPassSchema>;

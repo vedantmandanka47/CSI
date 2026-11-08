@@ -563,5 +563,38 @@ describe('AttendanceService (M9)', () => {
       expect(result.results[0]?.status).toBe(AttendanceStatus.REJECTED);
       expect(result.results[0]?.message).toContain('Member does not hold a confirmed registration for this event.');
     });
+
+    it('rejects offline queue replay with expired QR codes with descriptive error (TASK-023 / B18 / F08)', async () => {
+      mockPrisma.attendanceSession.findUnique.mockResolvedValue(sampleSession);
+      mockIdCardService.verifyQrPass.mockResolvedValue({
+        valid: false,
+        message: 'QR pass was expired at capture time.',
+      });
+
+      const batch = {
+        operations: [
+          {
+            client_uuid: 'uuid-expired-replay',
+            session_id: 'session-1',
+            method: AttendanceMethod.QR_SCAN,
+            payload: 'csi_pass.expired.replay',
+            client_marked_at: new Date().toISOString(),
+          },
+        ],
+      };
+
+      const result = await service.syncOfflineOperations(batch, 'volunteer-1');
+
+      expect(result.rejected_count).toBe(1);
+      expect(result.results[0]?.status).toBe(AttendanceStatus.REJECTED);
+      expect(result.results[0]?.message).toBe('QR pass was expired at capture time.');
+      expect(mockIdCardService.verifyQrPass).toHaveBeenCalledWith(
+        'csi_pass.expired.replay',
+        expect.objectContaining({
+          captureTimestamp: expect.any(Date),
+          maxSyncWindowSec: 86400,
+        }),
+      );
+    });
   });
 });
