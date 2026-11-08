@@ -29,6 +29,7 @@ import {
   UserStatus,
   RegistrationStatus,
   SEAT_CONSUMING_STATUSES,
+  RoleCode,
 } from '@csi/shared';
 
 @Injectable()
@@ -838,7 +839,7 @@ export class AttendanceService {
     }
 
     // 3. Audience Tier Eligibility
-    await this.assertAudienceEligibility(session, memberId);
+    await this.assertAudienceEligibility(session, memberId, markedAt);
 
     // 4. Mandatory Manual Notes Validation
     if (method === AttendanceMethod.MANUAL) {
@@ -854,11 +855,12 @@ export class AttendanceService {
   }
 
   /**
-   * Helper: enforce audience eligibility constraints
+   * Helper: enforce strict audience tier hierarchy and active tenure constraints (TASK-024 / B18 / F09)
    */
   private async assertAudienceEligibility(
     session: { eventId: string; audience: string },
     memberId: string,
+    markedAt?: Date,
   ): Promise<void> {
     if (session.audience === AttendanceAudience.ALL) {
       return;
@@ -879,28 +881,79 @@ export class AttendanceService {
           message: 'Member does not hold a confirmed registration for this event.',
         });
       }
-    } else if (
+      return;
+    }
+
+    if (
       session.audience === AttendanceAudience.VOLUNTEERS ||
       session.audience === AttendanceAudience.CORE ||
       session.audience === AttendanceAudience.SUBCORE
     ) {
-      const roleAssignments = await this.prisma.roleAssignment.findMany({
-        where: { userId: memberId },
+      const checkTime = markedAt ?? new Date();
+
+      // Filter role assignments by active term boundaries: termStart <= checkTime AND (termEnd IS NULL OR termEnd >= checkTime)
+      const activeRoleAssignments = await this.prisma.roleAssignment.findMany({
+        where: {
+          userId: memberId,
+          termStart: { lte: checkTime },
+          OR: [
+            { termEnd: null },
+            { termEnd: { gte: checkTime } },
+          ],
+        },
         include: { role: true },
       });
 
-      const roleCodes = roleAssignments.map((ra) => ra.role.code);
-      const isEligible = roleCodes.some((code) =>
-        ['committee', 'subcore', 'core', 'vp', 'president', 'admin'].includes(code),
-      );
+      const activeRoleCodes = activeRoleAssignments.map((ra) => ra.role.code as RoleCode);
+
+      let isEligible = false;
+
+      if (session.audience === AttendanceAudience.CORE) {
+        // Strict Core tier: Requires active Core role or Executive (Admin, President, VP) in current term
+        const coreAllowed: RoleCode[] = [
+          RoleCode.CORE,
+          RoleCode.PRESIDENT,
+          RoleCode.VP,
+          RoleCode.ADMIN,
+        ];
+        isEligible = activeRoleCodes.some((code) => coreAllowed.includes(code));
+      } else if (session.audience === AttendanceAudience.SUBCORE) {
+        // Subcore tier: Requires active Subcore, Core, or Executive role in current term
+        const subcoreAllowed: RoleCode[] = [
+          RoleCode.SUBCORE,
+          RoleCode.CORE,
+          RoleCode.PRESIDENT,
+          RoleCode.VP,
+          RoleCode.ADMIN,
+        ];
+        isEligible = activeRoleCodes.some((code) => subcoreAllowed.includes(code));
+      } else if (session.audience === AttendanceAudience.VOLUNTEERS) {
+        // Volunteers tier: Requires active Committee volunteer, Subcore, Core, or Executive role in current term
+        const volunteerAllowed: RoleCode[] = [
+          RoleCode.COMMITTEE,
+          RoleCode.SUBCORE,
+          RoleCode.CORE,
+          RoleCode.PRESIDENT,
+          RoleCode.VP,
+          RoleCode.ADMIN,
+        ];
+        isEligible = activeRoleCodes.some((code) => volunteerAllowed.includes(code));
+      }
 
       if (!isEligible) {
         throw new ForbiddenException({
           code: 'INELIGIBLE_AUDIENCE',
-          message: `Member does not belong to authorized audience tier "${session.audience}".`,
+          message: `Member does not hold an active role in authorized audience tier "${session.audience}".`,
         });
       }
+      return;
     }
+
+    // Default deny for unrecognized audience tier
+    throw new ForbiddenException({
+      code: 'INELIGIBLE_AUDIENCE',
+      message: `Unknown or unauthorized audience tier "${session.audience}".`,
+    });
   }
 
   private mapSession(s: {

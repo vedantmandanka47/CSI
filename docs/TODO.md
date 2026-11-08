@@ -533,10 +533,20 @@ This document is the unified, authoritative remediation master plan for the CSI 
     2. Explicitly document and enforce offline attendance capabilities.
     3. Add tests verifying offline queue replay with expired QR codes fails safely with descriptive error.
 
-- [ ] **TASK-024 [HIGH] [B18 / F09]: Attendance Audience Tiers & Active Tenure Filtering**
+- [x] **TASK-024 [HIGH] [B18 / F09]: Attendance Audience Tiers & Active Tenure Filtering**
   - **Severity:** High (Authorization Logic Flaw)
+  - **Completed:**
+    - Refactored `AttendanceService.assertAudienceEligibility` to enforce strict organizational tier hierarchy:
+      - `CORE`: Restricted strictly to active `RoleCode.CORE` or executive leadership (`ADMIN`, `PRESIDENT`, `VP`).
+      - `SUBCORE`: Restricted strictly to active `RoleCode.SUBCORE`, `RoleCode.CORE`, or executive leadership.
+      - `VOLUNTEERS`: Restricted to active `RoleCode.COMMITTEE` volunteers, subcore, core, and executive leadership.
+      - `PARTICIPANTS`: Requires confirmed event registration (`status in SEAT_CONSUMING_STATUSES`).
+    - Enforced active tenure boundaries on all role assignment queries (`termStart <= checkTime AND (termEnd IS NULL OR termEnd >= checkTime)`), passing the session `markedAt` timestamp to prevent expired officers or post-dated assignments from checking into tier-restricted sessions.
+    - Updated centralized validation engine (`validateAttendanceCandidate`) protecting all attendance entry points (QR check-in, TOTP check-in, manual override, and batch offline synchronization).
+    - Added comprehensive unit tests in `attendance.service.spec.ts` (25/25 passed) asserting hierarchy rejection (subcore/volunteer rejected on core, volunteer rejected on subcore), expired tenure rejection, and active role authorization across all tiers.
   - **Affected Files:**
-    - `apps/api/src/modules/attendance/attendance.service.ts` (`assertAudienceEligibility`)
+    - `apps/api/src/modules/attendance/attendance.service.ts` (`assertAudienceEligibility`, `validateAttendanceCandidate`)
+    - `tests/unit/api/modules/attendance/attendance.service.spec.ts`
   - **Problem:** `assertAudienceEligibility` collapses volunteers, subcore, and core into a single shared list accepting all roles. It also queries roles without filtering by `termStart <= NOW() AND (termEnd IS NULL OR termEnd >= NOW())`. An expired officer can check into a restricted core meeting.
   - **Remediation Plan:**
     1. Implement strict tier hierarchy checks: Core requires active Executive/Core role in current term; Subcore requires active Subcore role.

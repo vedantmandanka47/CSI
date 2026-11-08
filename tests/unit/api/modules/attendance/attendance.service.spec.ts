@@ -1,5 +1,10 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { NotFoundException, BadRequestException, ConflictException } from '@nestjs/common';
+import {
+  NotFoundException,
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+} from '@nestjs/common';
 import { AttendanceService } from '../../../../../apps/api/src/modules/attendance/attendance.service.js';
 import { PrismaService } from '../../../../../apps/api/src/infra/prisma/prisma.service.js';
 import { IdCardService } from '../../../../../apps/api/src/modules/id-card/id-card.service.js';
@@ -9,6 +14,7 @@ import {
   AttendanceStatus,
   RecipientType,
   UserStatus,
+  RoleCode,
 } from '@csi/shared';
 import { generateTotp } from '../../../../../apps/api/src/common/crypto/totp.js';
 
@@ -595,6 +601,304 @@ describe('AttendanceService (M9)', () => {
           maxSyncWindowSec: 86400,
         }),
       );
+    });
+  });
+
+  describe('Attendance Audience Tiers & Active Tenure Filtering (TASK-024 / B18 / F09)', () => {
+    it('rejects check-in to CORE audience session if officer holds an expired role tenure', async () => {
+      mockPrisma.attendanceSession.findUnique.mockResolvedValue({
+        ...sampleSession,
+        audience: AttendanceAudience.CORE,
+      });
+      mockPrisma.user.findUnique.mockResolvedValue({
+        id: 'officer-expired',
+        status: UserStatus.ACTIVE,
+      });
+
+      // Prisma filters out expired tenure, returning empty array
+      mockPrisma.roleAssignment.findMany.mockResolvedValue([]);
+
+      await expect(
+        service.checkInManual(
+          {
+            session_id: 'session-1',
+            member_id: 'officer-expired',
+            notes: 'Physical attendance verified',
+            client_uuid: 'uuid-core-expired',
+          },
+          'admin-1',
+        ),
+      ).rejects.toThrow(ForbiddenException);
+
+      expect(mockPrisma.roleAssignment.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            userId: 'officer-expired',
+            termStart: { lte: expect.any(Date) },
+            OR: [{ termEnd: null }, { termEnd: { gte: expect.any(Date) } }],
+          }),
+        }),
+      );
+    });
+
+    it('rejects check-in to CORE audience session for member holding only SUBCORE role', async () => {
+      mockPrisma.attendanceSession.findUnique.mockResolvedValue({
+        ...sampleSession,
+        audience: AttendanceAudience.CORE,
+      });
+      mockPrisma.user.findUnique.mockResolvedValue({
+        id: 'subcore-member',
+        status: UserStatus.ACTIVE,
+      });
+
+      // Active subcore role returned
+      mockPrisma.roleAssignment.findMany.mockResolvedValue([
+        { role: { code: RoleCode.SUBCORE } },
+      ]);
+
+      await expect(
+        service.checkInManual(
+          {
+            session_id: 'session-1',
+            member_id: 'subcore-member',
+            notes: 'Physical attendance verified',
+            client_uuid: 'uuid-subcore-on-core',
+          },
+          'admin-1',
+        ),
+      ).rejects.toThrow(
+        'Member does not hold an active role in authorized audience tier "core".',
+      );
+    });
+
+    it('rejects check-in to CORE audience session for member holding only COMMITTEE volunteer role', async () => {
+      mockPrisma.attendanceSession.findUnique.mockResolvedValue({
+        ...sampleSession,
+        audience: AttendanceAudience.CORE,
+      });
+      mockPrisma.user.findUnique.mockResolvedValue({
+        id: 'volunteer-member',
+        status: UserStatus.ACTIVE,
+      });
+
+      mockPrisma.roleAssignment.findMany.mockResolvedValue([
+        { role: { code: RoleCode.COMMITTEE } },
+      ]);
+
+      await expect(
+        service.checkInManual(
+          {
+            session_id: 'session-1',
+            member_id: 'volunteer-member',
+            notes: 'Physical attendance verified',
+            client_uuid: 'uuid-volunteer-on-core',
+          },
+          'admin-1',
+        ),
+      ).rejects.toThrow(
+        'Member does not hold an active role in authorized audience tier "core".',
+      );
+    });
+
+    it('rejects check-in to SUBCORE audience session for member holding only COMMITTEE volunteer role', async () => {
+      mockPrisma.attendanceSession.findUnique.mockResolvedValue({
+        ...sampleSession,
+        audience: AttendanceAudience.SUBCORE,
+      });
+      mockPrisma.user.findUnique.mockResolvedValue({
+        id: 'volunteer-member',
+        status: UserStatus.ACTIVE,
+      });
+
+      mockPrisma.roleAssignment.findMany.mockResolvedValue([
+        { role: { code: RoleCode.COMMITTEE } },
+      ]);
+
+      await expect(
+        service.checkInManual(
+          {
+            session_id: 'session-1',
+            member_id: 'volunteer-member',
+            notes: 'Physical attendance verified',
+            client_uuid: 'uuid-volunteer-on-subcore',
+          },
+          'admin-1',
+        ),
+      ).rejects.toThrow(
+        'Member does not hold an active role in authorized audience tier "subcore".',
+      );
+    });
+
+    it('permits check-in to CORE audience session for member holding active CORE role', async () => {
+      mockPrisma.attendanceSession.findUnique.mockResolvedValue({
+        ...sampleSession,
+        audience: AttendanceAudience.CORE,
+      });
+      mockPrisma.user.findUnique.mockResolvedValue({
+        id: 'core-member',
+        status: UserStatus.ACTIVE,
+      });
+      mockPrisma.roleAssignment.findMany.mockResolvedValue([
+        { role: { code: RoleCode.CORE } },
+      ]);
+      mockPrisma.attendanceRecord.findUnique.mockResolvedValue(null);
+      mockPrisma.attendanceRecord.create.mockResolvedValue({
+        id: 'rec-core-1',
+        sessionId: 'session-1',
+        eventId: 'event-1',
+        subjectType: RecipientType.MEMBER,
+        subjectId: 'core-member',
+        method: AttendanceMethod.MANUAL,
+        status: AttendanceStatus.VERIFIED,
+        clientUuid: 'uuid-core-valid',
+        notes: 'Core meeting check-in verified',
+        markedById: 'admin-1',
+        verifiedAt: new Date(),
+        clientMarkedAt: new Date(),
+        createdAt: new Date(),
+      });
+
+      const result = await service.checkInManual(
+        {
+          session_id: 'session-1',
+          member_id: 'core-member',
+          notes: 'Core meeting check-in verified',
+          client_uuid: 'uuid-core-valid',
+        },
+        'admin-1',
+      );
+
+      expect(result.id).toBe('rec-core-1');
+      expect(result.status).toBe(AttendanceStatus.VERIFIED);
+    });
+
+    it('permits check-in to CORE audience session for active executive (PRESIDENT / VP / ADMIN)', async () => {
+      mockPrisma.attendanceSession.findUnique.mockResolvedValue({
+        ...sampleSession,
+        audience: AttendanceAudience.CORE,
+      });
+      mockPrisma.user.findUnique.mockResolvedValue({
+        id: 'president-user',
+        status: UserStatus.ACTIVE,
+      });
+      mockPrisma.roleAssignment.findMany.mockResolvedValue([
+        { role: { code: RoleCode.PRESIDENT } },
+      ]);
+      mockPrisma.attendanceRecord.findUnique.mockResolvedValue(null);
+      mockPrisma.attendanceRecord.create.mockResolvedValue({
+        id: 'rec-pres-1',
+        sessionId: 'session-1',
+        eventId: 'event-1',
+        subjectType: RecipientType.MEMBER,
+        subjectId: 'president-user',
+        method: AttendanceMethod.MANUAL,
+        status: AttendanceStatus.VERIFIED,
+        clientUuid: 'uuid-pres-valid',
+        notes: 'Executive check-in verified',
+        markedById: 'admin-1',
+        verifiedAt: new Date(),
+        clientMarkedAt: new Date(),
+        createdAt: new Date(),
+      });
+
+      const result = await service.checkInManual(
+        {
+          session_id: 'session-1',
+          member_id: 'president-user',
+          notes: 'Executive check-in verified',
+          client_uuid: 'uuid-pres-valid',
+        },
+        'admin-1',
+      );
+
+      expect(result.id).toBe('rec-pres-1');
+      expect(result.status).toBe(AttendanceStatus.VERIFIED);
+    });
+
+    it('permits check-in to SUBCORE audience session for active SUBCORE role holder', async () => {
+      mockPrisma.attendanceSession.findUnique.mockResolvedValue({
+        ...sampleSession,
+        audience: AttendanceAudience.SUBCORE,
+      });
+      mockPrisma.user.findUnique.mockResolvedValue({
+        id: 'subcore-user',
+        status: UserStatus.ACTIVE,
+      });
+      mockPrisma.roleAssignment.findMany.mockResolvedValue([
+        { role: { code: RoleCode.SUBCORE } },
+      ]);
+      mockPrisma.attendanceRecord.findUnique.mockResolvedValue(null);
+      mockPrisma.attendanceRecord.create.mockResolvedValue({
+        id: 'rec-subcore-1',
+        sessionId: 'session-1',
+        eventId: 'event-1',
+        subjectType: RecipientType.MEMBER,
+        subjectId: 'subcore-user',
+        method: AttendanceMethod.MANUAL,
+        status: AttendanceStatus.VERIFIED,
+        clientUuid: 'uuid-subcore-valid',
+        notes: 'Subcore check-in verified',
+        markedById: 'admin-1',
+        verifiedAt: new Date(),
+        clientMarkedAt: new Date(),
+        createdAt: new Date(),
+      });
+
+      const result = await service.checkInManual(
+        {
+          session_id: 'session-1',
+          member_id: 'subcore-user',
+          notes: 'Subcore check-in verified',
+          client_uuid: 'uuid-subcore-valid',
+        },
+        'admin-1',
+      );
+
+      expect(result.id).toBe('rec-subcore-1');
+      expect(result.status).toBe(AttendanceStatus.VERIFIED);
+    });
+
+    it('permits check-in to VOLUNTEERS audience session for active COMMITTEE volunteer', async () => {
+      mockPrisma.attendanceSession.findUnique.mockResolvedValue({
+        ...sampleSession,
+        audience: AttendanceAudience.VOLUNTEERS,
+      });
+      mockPrisma.user.findUnique.mockResolvedValue({
+        id: 'volunteer-user',
+        status: UserStatus.ACTIVE,
+      });
+      mockPrisma.roleAssignment.findMany.mockResolvedValue([
+        { role: { code: RoleCode.COMMITTEE } },
+      ]);
+      mockPrisma.attendanceRecord.findUnique.mockResolvedValue(null);
+      mockPrisma.attendanceRecord.create.mockResolvedValue({
+        id: 'rec-vol-1',
+        sessionId: 'session-1',
+        eventId: 'event-1',
+        subjectType: RecipientType.MEMBER,
+        subjectId: 'volunteer-user',
+        method: AttendanceMethod.MANUAL,
+        status: AttendanceStatus.VERIFIED,
+        clientUuid: 'uuid-vol-valid',
+        notes: 'Volunteer check-in verified',
+        markedById: 'admin-1',
+        verifiedAt: new Date(),
+        clientMarkedAt: new Date(),
+        createdAt: new Date(),
+      });
+
+      const result = await service.checkInManual(
+        {
+          session_id: 'session-1',
+          member_id: 'volunteer-user',
+          notes: 'Volunteer check-in verified',
+          client_uuid: 'uuid-vol-valid',
+        },
+        'admin-1',
+      );
+
+      expect(result.id).toBe('rec-vol-1');
+      expect(result.status).toBe(AttendanceStatus.VERIFIED);
     });
   });
 });
